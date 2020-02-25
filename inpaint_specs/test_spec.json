@@ -1,0 +1,1 @@
+{"inpaint_method": "independent", "prior_type": "normal", "prior_scale": 1, "loss": "cross_entropy", "optimizer": "adam", "learning_rate": 0.0002, "iterations": 5000, "n_samples": 100, "noise_decay": 0.9999, "noise_sd": 0.25, "logits_generated": true, "save_name": "inpaint_test.npy"}

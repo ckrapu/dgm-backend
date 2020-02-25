@@ -3,7 +3,26 @@ import numpy as np
 import json
 import fire
 import glob
-import tensorflow as tf
+
+from functools import partial
+
+def parse_spec_optimizer(spec, valid_opt=['adam']):
+    opt = spec['optimizer']
+    if opt == 'adam':
+        return tf.keras.optimizers.Adam(learning_rate=spec['learning_rate'])
+    elif opt not in valid_opt:
+        raise ValueError('Optimizer not recognized. Please provide one of {0}.'.format(valid_opt))
+
+def parse_spec_prior(spec, n, latent_dim, valid_prior=['uniform','normal']):
+    prior = spec['prior_type']
+    scale = spec['prior_scale']
+
+    if prior == 'normal':
+        return partial(tf.random.normal,shape=[n,latent_dim],stddev=scale)
+    elif prior == 'uniform':
+        return partial(tf.random.uniform,shape=[n,latent_dim],minval=0,maxval=prior_scale)
+    elif prior not in valid_prior:
+        raise ValueError('Prior type not recognized. Please provide one of {0}'.format(valid_prior))
 
 def get_wgan_losses_fn():
     '''From github.com/LynnHo GAN repository'''
