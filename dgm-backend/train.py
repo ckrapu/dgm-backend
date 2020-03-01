@@ -1,10 +1,10 @@
 import fire
 import json
+
 import numpy as np
 
 from models import VAE, GAN
 from utils  import describe_spec, get_diagnostics, prep_data
-
 
 SAVED_MODELS_DIR = '../data/saved_models/'
 DTYPE            = 'float32'
@@ -25,7 +25,7 @@ def init_model(spec):
                                   Please try one of {1}'.format(model_name,
                                   valid_models))
 
-def train(data_path, model_spec_path):
+def train(data_path, model_spec_path, save=True, **kwargs):
 
   # load data
   if 'npy' in data_path:
@@ -34,10 +34,21 @@ def train(data_path, model_spec_path):
     raise NotImplementedError('Only datasets with the .npy extension are \
                               supported.')
 
+  # Occasionally JSON files accidentally 
+  # get troublesome whitespace added which
+  # can break the JSON loading
   with open(model_spec_path,'r') as spec_src:
       spec_as_str = spec_src.read().strip()
 
   spec = json.loads(spec_as_str)
+
+  # If any special arguments have been passed,
+  # use them to update the specification for the
+  # model fitting.
+  for key,value in kwargs.items():
+    if key in spec.keys():
+      spec[key] = value
+
   spec.update({'image_dims':data.shape[1:],'channels':data.shape[-1]})
   describe_spec(spec)
 
@@ -46,11 +57,13 @@ def train(data_path, model_spec_path):
   model = init_model(spec)
 
   model.train(dataset)
-  model.save(SAVED_MODELS_DIR + spec['name'])
+  if save:
+    model.save(SAVED_MODELS_DIR + spec['name'])
 
   get_diagnostics(model)
 
-  return
+  return model
+
 
 if __name__ == '__main__':
   fire.Fire(train)

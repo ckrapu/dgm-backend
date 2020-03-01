@@ -1,1 +1,1 @@
-{"model_type": "vae", "latent_dim": 10, "inference_net": "vae_encoder.json", "generative_net": "vae_decoder.json", "optimizer": "adam", "opt_kwargs": {}, "epochs": 10, "batch_size": 32, "name": "vae_basic"}
+{"model_type": "vae", "latent_dim": 50, "inference_net": "vae_encoder.json", "generative_net": "vae_decoder.json", "optimizer": "adam", "opt_kwargs": {"learning_rate":0.0001}, "epochs": 1, "batch_size": 32, "name": "vae_basic_test"}

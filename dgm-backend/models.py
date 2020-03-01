@@ -1,31 +1,48 @@
-import tensorflow as tf
 import json
 import utils
 
-from functools import partial
-from tqdm      import tqdm
+import tensorflow as tf
+import matplotlib.pyplot as plt
 
-SPECS_DIR = '../data/model_specs/network_specs/'
+from functools import partial
+from tqdm      import trange
+from os        import remove
+from os.path   import exists
+
+SPECS_DIR = '../model_specs/network_specs/'
+VIZ_DIR   = '../data/visualizations/'  
 
 class GenerativeModel(tf.keras.Model):
     '''Common class for deep generative models'''
     def __init__(self):
         super(GenerativeModel, self).__init__()
 
-    def save(self, prefix):
+    def save(self, prefix, overwrite=True):
         has_generator = hasattr(self, 'generative_net')
         has_inference = hasattr(self, 'inference_net')
 
-        if has_inference:
+        if has_inference:           
             inference_path = prefix + '_inference_net.h5'
-            self.inference_net.save(inference_path)
+            if exists(inference_path):
+                remove(inference_path)
+            self.inference_net.save(inference_path, overwrite=overwrite)
 
         if has_generator:
             generative_path = prefix + '_generative_net.h5'
-            self.generative_net.save(generative_path)
+            if exists(generative_path):
+                remove(generative_path)
+            self.generative_net.save(generative_path, overwrite=overwrite)
 
         if not (has_generator or has_inference):
             raise ValueError('No model object found for saving.')
+    
+    def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={}):
+        '''Plot samples drawn from prior for generative model.'''
+        x = self.sample(n=n)
+        flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
+        ax = plt.imshow(flat_x, **plot_kwargs)
+        return ax
+
 
 class GAN(GenerativeModel):
 
@@ -89,20 +106,28 @@ class GAN(GenerativeModel):
 
         return {'d_loss': x_real_d_loss + x_fake_d_loss, 'gp': gp}
 
-    def train(self,dataset):
+    def train(self,dataset,loss_update=100):
+        t = trange(self.spec['epochs'],desc='Loss')
+        for e in t:
 
-        for e in tqdm(range(self.spec['epochs'])):
-
-            for x_real in dataset:
+            for j,x_real in enumerate(dataset):
                 D_loss_dict = self.train_discriminator(x_real)
 
                 if self.D_optimizer.iterations.numpy() % self.spec['gen_train_steps']== 0:
                     G_loss_dict = self.train_generator()
-    @tf.function
+
+                if j % loss_update == 0:
+                    disc_loss = D_loss_dict['d_loss']
+                    gp_loss = D_loss_dict['gp']
+                    gen_loss = G_loss_dict['g_loss']
+                    loss_str = f'Loss - Discriminator: {disc_loss}, Generator: {gen_loss}, Gradient Penalty: {gp_loss}'
+                    t.set_description(loss_str)
+
     def sample(self,z=None,n=100):
         if z is None:
             z = tf.random.normal(shape=(n, self.latent_dim))
-        out = self.decode(z,apply_sigmoid=True)
+        x = self.decode(z,apply_sigmoid=True)
+        return x.numpy()
 
     def decode(self, z, apply_sigmoid=False):
         logits = self.generative_net(z)
@@ -110,6 +135,8 @@ class GAN(GenerativeModel):
             probs = tf.sigmoid(logits)
             return probs
         return logits
+
+    
 
 
 class VAE(GenerativeModel):
@@ -139,11 +166,11 @@ class VAE(GenerativeModel):
         #gen_spec_str = json.dumps(gen_spec)
         self.generative_net = tf.keras.models.model_from_json(gen_spec)
 
-    @tf.function
-    def sample(self, z=None, n_samples=100):
+    def sample(self, z=None, n=100):
         if z is None:
-            z = tf.random.normal(shape=(n_samples, self.latent_dim))
-        return self.decode(z, apply_sigmoid=True)
+            z = tf.random.normal(shape=(n, self.latent_dim))
+            x = self.decode(z, apply_sigmoid=True)
+        return x.numpy()
 
     def encode(self, x):
         mean, logvar = tf.split(self.inference_net(x), num_or_size_splits=2, axis=1)
@@ -160,21 +187,24 @@ class VAE(GenerativeModel):
             return probs
         return logits
 
-    def train(self,dataset):
+    def train(self,dataset,loss_update=100):
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
         settings = self.spec['opt_kwargs']
         if self.spec['optimizer'] == 'adam':
-            optimizer = tf.keras.optimizers.Adam(**settings)
+            self.optimizer = tf.keras.optimizers.Adam(**settings)
         else:
             raise NotImplementedError('Other optimizers are not \
                                       yet supported.')
+        t = trange(self.spec['epochs'],desc='Loss')
+        for i in t:
+            for j,minibatch in enumerate(dataset):
+                loss = compute_apply_gradients(self, minibatch,
+                                        self.optimizer, vae_cross_ent_loss)
+                if j % loss_update == 0:
+                    t.set_description('Loss=%g' % loss)
 
-        for i in tqdm(range(self.spec['epochs'])):
-            for minibatch in dataset:
-                compute_apply_gradients(self, minibatch,
-                                        optimizer, vae_cross_ent_loss)
-
+    
 
 @tf.function
 def vae_cross_ent_loss(model, x):
@@ -194,3 +224,4 @@ def compute_apply_gradients(model, x, optimizer,loss_fn):
         loss = loss_fn(model, x)
         gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    return loss

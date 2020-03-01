@@ -3,24 +3,32 @@ import numpy as np
 import json
 import fire
 import glob
+import os
+
+import matplotlib.pyplot as plt
 
 from functools import partial
+from tqdm import tqdm
 
-def parse_spec_optimizer(spec, valid_opt=['adam']):
+def parse_spec_optimizer(spec, valid_opt=['adam','sgd']):
+    '''Create Keras optimizer object from JSON specification.'''
     opt = spec['optimizer']
     if opt == 'adam':
         return tf.keras.optimizers.Adam(learning_rate=spec['learning_rate'])
+    elif opt =='sgd':
+        return tf.keras.optimizers.SGD(learning_rate=spec['learning_rate'])
     elif opt not in valid_opt:
         raise ValueError('Optimizer not recognized. Please provide one of {0}.'.format(valid_opt))
 
 def parse_spec_prior(spec, n, latent_dim, valid_prior=['uniform','normal']):
+    '''Create prior distribution from JSON specification.'''
     prior = spec['prior_type']
     scale = spec['prior_scale']
 
     if prior == 'normal':
         return partial(tf.random.normal,shape=[n,latent_dim],stddev=scale)
     elif prior == 'uniform':
-        return partial(tf.random.uniform,shape=[n,latent_dim],minval=0,maxval=prior_scale)
+        return partial(tf.random.uniform,shape=[n,latent_dim],minval=0,maxval=scale)
     elif prior not in valid_prior:
         raise ValueError('Prior type not recognized. Please provide one of {0}'.format(valid_prior))
 
@@ -65,6 +73,14 @@ def gradient_penalty(f, real, fake):
 
     return gp
 
+def flatten_image_batch(x,nrows,ncols):
+    height,width = x.shape[1:3]
+    out = np.empty([nrows*height, ncols*width])
+    for i in range(nrows):
+        for j in range(ncols):
+            out[i*height:(i+1)*height,j*width:(j+1)*width] = x[i*nrows+j]
+    return out
+
 def read_and_resize(path,units,order):
     with open(path,'r') as src:
         str_spec = src.read()
@@ -97,10 +113,16 @@ def check_json_valid(root_dir='..'):
         except json.decoder.JSONDecodeError as error:
             raise Exception('JSON read failed for {0}.'.format(f)) from error
 
+def norm_zero_one(array):
+    array = array-array.min()
+    array = array / array.max()
+    return array
+
 def norm_div_255(array):
+    array = array
     return array / 255
 
-def prep_data(array,spec,normalizer=norm_div_255):
+def prep_data(array,spec,normalizer=norm_zero_one):
     batch_size = spec['batch_size']
     n = array.shape[0]
     data = normalizer(array)
