@@ -2,13 +2,14 @@ import numpy      as np
 import tensorflow as tf
 import json
 import fire
+import utils
 
 from samplers import LangevinDynamics
 
 COMPLETION_DIR = '../data/samples/'
 valid_samplers = ['langevin']
 
-def inpaint(model_path, spec_path, data_path,save=True,**kwargs):
+def inpaint(model_path, spec_path, data_path, save=True, **kwargs):
     '''Uses a deep generative model to conduct inpainting for partially
     obscured images.
 
@@ -28,7 +29,6 @@ def inpaint(model_path, spec_path, data_path,save=True,**kwargs):
     with open(spec_path,'r') as inp_spec_src:
         spec_str = inp_spec_src.read()
     spec = json.loads(spec_str)
-
     generative_net = tf.keras.models.load_model(model_path)
 
     method = spec['inpaint_method'].lower()
@@ -40,12 +40,17 @@ def inpaint(model_path, spec_path, data_path,save=True,**kwargs):
 
     
     for key,value in kwargs.items():
-        if key in spec.keys():
-            spec[key] = value
+        spec[key] = value
+
     if method == 'langevin':
         sampler = LangevinDynamics(data, generative_net, spec)
+
     elif method not in valid_samplers:
         raise ValueError('Provided sampling method not recognized. Please provide one of {0}.'.format(valid_samplers))
+   
+    # If there are batch norm layers in the generator, toggle off of
+    # training mode.
+    sampler.generative_net = utils.switch_bn_mode(sampler.generative_net)
     
     samples = sampler.draw(spec)
 

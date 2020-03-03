@@ -9,6 +9,14 @@ import matplotlib.pyplot as plt
 
 from functools import partial
 from tqdm import tqdm
+from tensorflow.python.keras.layers.normalization import BatchNormalization
+
+def switch_bn_mode(model):
+    '''Toggle training behavior for batch norm layers in a Model.'''
+    for layer in model.layers:
+        if isinstance(layer, BatchNormalization):
+            layer.trainable = not layer.trainable
+    return model
 
 def parse_spec_optimizer(spec, valid_opt=['adam','sgd']):
     '''Create Keras optimizer object from JSON specification.'''
@@ -163,5 +171,3 @@ def resize_layer(spec,units,order):
 
     raise KeyError('Layer {0} could not be updated.'.format(order))
 
-if __name__ == '__main__':
-  fire.Fire()

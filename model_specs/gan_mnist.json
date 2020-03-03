@@ -1,0 +1,1 @@
+{"model_type": "gan", "latent_dim": 50, "inference_net": "gan_discriminator_mnist_3M.json", "generative_net": "gan_generator_mnist_3M.json", "optimizer": "adam", "opt_kwargs": {}, "epochs": 1, "batch_size": 32, "name": "gan_mnist", "gradient_penalty": 10, "gen_train_steps": 2, "learning_rate": 0.0002}

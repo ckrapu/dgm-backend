@@ -39,7 +39,7 @@ class GenerativeModel(tf.keras.Model):
     def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={}):
         '''Plot samples drawn from prior for generative model.'''
         x = self.sample(n=n)
-        flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
+        flat_x = utils.flatten_image_batch(x.squeeze(), nrows=nrows, ncols=ncols)
         ax = plt.imshow(flat_x, **plot_kwargs)
         return ax
 
@@ -58,13 +58,12 @@ class GAN(GenerativeModel):
         with open(SPECS_DIR + spec['generative_net']) as gen_src:
             gen_spec = gen_src.read()
         gen_spec = utils.fix_batch_shape(gen_spec, [None,self.latent_dim])
-        print(gen_spec)
         self.generative_net = tf.keras.models.model_from_json(gen_spec)
 
         # load in the discriminator
         with open(SPECS_DIR + spec['inference_net']) as inf_src:
             inf_spec = inf_src.read()
-        inf_spec = utils.fix_batch_shape(inf_spec, [None] + list(self.image_dims))
+        inf_spec = utils.fix_batch_shape(inf_spec, [None]+ list(self.image_dims))
         self.inference_net = tf.keras.models.model_from_json(inf_spec)
 
         self.d_loss_fn, self.g_loss_fn = utils.get_wgan_losses_fn()
@@ -116,7 +115,7 @@ class GAN(GenerativeModel):
                 if self.D_optimizer.iterations.numpy() % self.spec['gen_train_steps']== 0:
                     G_loss_dict = self.train_generator()
 
-                if j % loss_update == 0:
+                if j % loss_update == 0 and j > self.spec['gen_train_steps']:
                     disc_loss = D_loss_dict['d_loss']
                     gp_loss = D_loss_dict['gp']
                     gen_loss = G_loss_dict['g_loss']
@@ -135,8 +134,6 @@ class GAN(GenerativeModel):
             probs = tf.sigmoid(logits)
             return probs
         return logits
-
-    
 
 
 class VAE(GenerativeModel):

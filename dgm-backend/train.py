@@ -31,8 +31,7 @@ def train(data_path, model_spec_path, save=True, **kwargs):
   if 'npy' in data_path:
     data = np.load(data_path).astype(DTYPE)
   else:
-    raise NotImplementedError('Only datasets with the .npy extension are \
-                              supported.')
+    raise NotImplementedError('Only datasets with the .npy extension are supported.')
 
   # Occasionally JSON files accidentally 
   # get troublesome whitespace added which
@@ -57,13 +56,13 @@ def train(data_path, model_spec_path, save=True, **kwargs):
   model = init_model(spec)
 
   model.train(dataset)
+
   if save:
     model.save(SAVED_MODELS_DIR + spec['name'])
 
   get_diagnostics(model)
 
   return model
-
 
 if __name__ == '__main__':
   fire.Fire(train)

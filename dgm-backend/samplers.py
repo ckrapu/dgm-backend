@@ -5,7 +5,6 @@ from functools import partial
 from utils     import parse_spec_optimizer, parse_spec_prior
 from tqdm      import trange
 
-from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow.keras.backend import binary_crossentropy
 
 VERY_LARGE_ENERGY = 1e10
@@ -81,6 +80,7 @@ class LangevinDynamics:
         noise_sd = spec['noise_sd']**0.5
         noise_decay = spec['noise_decay']
         use_metropolis = spec['use_metropolis']
+        skip_grad = spec['skip_grad']
         
         tiled_data = tf.cast(tf.repeat(self.data, self.n_samples, axis=0),DTYPE)
 
@@ -104,9 +104,10 @@ class LangevinDynamics:
         for i in t:
         
             if use_metropolis:
-                z, energy, loss = self.mala_step(z,tiled_mask,tiled_data,noise_sd,energy)
+                z, energy, loss = self.mala_step(z,tiled_mask,tiled_data,
+                                                noise_sd,energy,skip_grad=skip_grad)
             else:
-                z, loss = self.langevin_step(z,tiled_mask,tiled_data,noise_sd)
+                z, loss = self.langevin_step(z,tiled_mask,tiled_data,noise_sd,skip_grad=skip_grad)
             
             t.set_description(f'Loss: {loss}')
             noise_sd *= noise_decay
@@ -123,7 +124,7 @@ class LangevinDynamics:
         else:
             samples = self.generative_net(z)
         return samples, loss_history
-
+    
     def gd_step(self,z,mask,data,noise_sd,skip_grad=False):
         '''Single step of gradient descent with masked loss function.'''
         with tf.GradientTape() as tape:
@@ -147,7 +148,7 @@ class LangevinDynamics:
         z = inject_noise(z,noise_sd)
         return z, loss
 
-    def mala_step(self,z,mask,data,noise_sd,energy,skip_grad=skip_grad):
+    def mala_step(self,z,mask,data,noise_sd,energy,skip_grad=False):
         '''Single step of Metropolis-adjusted Langevin algorithm'''
         znew, loss = self.langevin_step(z,mask,data,noise_sd,skip_grad=skip_grad)
         x_pred = self.generative_net(z)
@@ -178,3 +179,11 @@ def loss_to_1_dim(loss_pixelwise,sum_axis=[1,2,3,]):
     summed over pixels / channels.'''
     reduced_loss = tf.reduce_sum(loss_pixelwise,axis=sum_axis)
     return tf.expand_dims(reduced_loss,axis=1)
+
+class ParallelHMC
+
+
+#class SamplerPyMC3:
+#    '''Sampler using PyMC3 interfacing with Tensorflow. Only
+#    appropriate for a single chain at a time.'''
+ 
