@@ -171,3 +171,21 @@ def resize_layer(spec,units,order):
 
     raise KeyError('Layer {0} could not be updated.'.format(order))
 
+
+def replace_batch_with_masked(mask_single,image_batch):
+    assert len(mask_single.shape) == 4
+    assert len(image_batch.shape) == 4
+    
+    batch_size = image_batch.shape[0]
+    
+    # This array is zero for all pixels that are to be replaced
+    # Pixels are replaced if their mask is zero in the original
+    # masked array
+    is_kept = np.repeat(mask_single.mask,batch_size , axis=0)
+    
+    # Zero out all the pixels that are NOT masked in the test data
+    new_batch = image_batch * is_kept
+    
+    single_with_zeros = mask_single.data * (1-mask_single.mask)
+    repeated_single = np.repeat(single_with_zeros,batch_size,axis=0)
+    return new_batch + repeated_single

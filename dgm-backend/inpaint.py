@@ -28,6 +28,7 @@ def inpaint(model_path, spec_path, data_path, save=True, **kwargs):
 
     with open(spec_path,'r') as inp_spec_src:
         spec_str = inp_spec_src.read()
+        
     spec = json.loads(spec_str)
     generative_net = tf.keras.models.load_model(model_path)
 
@@ -52,7 +53,7 @@ def inpaint(model_path, spec_path, data_path, save=True, **kwargs):
     # training mode.
     sampler.generative_net = utils.switch_bn_mode(sampler.generative_net)
     
-    samples = sampler.draw(spec)
+    samples, loss = sampler.draw(spec)
 
     if isinstance(samples, tf.Variable):
         samples=samples.numpy()
@@ -60,7 +61,7 @@ def inpaint(model_path, spec_path, data_path, save=True, **kwargs):
     if save:
         np.save(COMPLETION_DIR+spec['save_name'], samples)
 
-    return samples
+    return samples, loss
 
 if __name__ == '__main__':
   fire.Fire(inpaint)

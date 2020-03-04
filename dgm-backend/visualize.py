@@ -27,7 +27,7 @@ def samples2gif(samples_path,output_path, nrows, ncols,
 
         plt.imshow(flat_x)
         plt.axis('off')
-        plt.savefig(filepath)
+        plt.savefig(filepath, bbox_inches='tight')
         plt.close()
 
         images.append(imageio.imread(filepath))
