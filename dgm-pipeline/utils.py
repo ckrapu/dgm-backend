@@ -10,6 +10,33 @@ import matplotlib.pyplot as plt
 from functools import partial
 from tqdm import tqdm
 from tensorflow.python.keras.layers.normalization import BatchNormalization
+from tensorflow.keras.backend import binary_crossentropy, abs
+
+valid_loss   = ['cross_entropy', 'mse', 'mae']
+
+def parse_spec_loss(loss_type,kwargs={}):
+    if loss_type == 'cross_entropy':
+        loss_fn  = partial(binary_crossentropy,from_logits=kwargs['from_logits'])
+    elif loss_type == 'mse':
+        loss_fn = lambda true, pred: (true - pred) ** 2 
+    elif loss_type == 'mae':
+        loss_fn = lambda true, pred: abs(true - pred)
+    else:
+        raise ValueError('The provided loss type is not currently \
+        supported. Please try one of {0}.'.format(valid_loss))
+    return loss_fn
+
+def eval_function(pred, true, function, sample_axis=0):
+    '''Evaluate function on both ground truth and samples
+    of predicted values.'''
+    batch = np.swapaxes(pred,0,sample_axis)
+    evals_pred = [function(sample) for sample in batch]
+    eval_true = function(sample)
+    return evals_pred, eval_true
+
+def is_covered(pred, true, width=90):
+    high, low = np.percentile(pred,q=[width, 1-width])
+    return np.logical_and(high > true, true > low)
 
 def switch_bn_mode(model):
     '''Toggle training behavior for batch norm layers in a Model.'''
@@ -55,7 +82,8 @@ def get_wgan_losses_fn():
     return d_loss_fn, g_loss_fn
 
 def gradient_penalty(f, real, fake):
-    '''Also from github.com/LynnHo'''
+    '''Calculate the loss due to gradient penalty under the WGAN-GP model.
+    Also from github.com/LynnHo'''
     def _gradient_penalty(f, real, fake=None):
         def _interpolate(a, b=None):
             if b is None:   # interpolation in DRAGAN
@@ -82,6 +110,7 @@ def gradient_penalty(f, real, fake):
     return gp
 
 def flatten_image_batch(x,nrows,ncols):
+    # Convert 3D array of images into a tiled 2D image
     height,width = x.shape[1:3]
     out = np.empty([nrows*height, ncols*width])
     for i in range(nrows):
@@ -90,6 +119,8 @@ def flatten_image_batch(x,nrows,ncols):
     return out
 
 def read_and_resize(path,units,order):
+    '''Open JSON spec for Keras model and resize
+    one of its layers.'''
     with open(path,'r') as src:
         str_spec = src.read()
     str_dict = json.loads(str_spec)
@@ -122,6 +153,8 @@ def check_json_valid(root_dir='..'):
             raise Exception('JSON read failed for {0}.'.format(f)) from error
 
 def norm_zero_one(array):
+    '''Normalize data to have support between zero and one.
+    This function uses the global extrema to normalize.'''
     array = array-array.min()
     array = array / array.max()
     return array
@@ -173,6 +206,7 @@ def resize_layer(spec,units,order):
 
 
 def replace_batch_with_masked(mask_single,image_batch):
+    
     assert len(mask_single.shape) == 4
     assert len(image_batch.shape) == 4
     
@@ -189,3 +223,18 @@ def replace_batch_with_masked(mask_single,image_batch):
     single_with_zeros = mask_single.data * (1-mask_single.mask)
     repeated_single = np.repeat(single_with_zeros,batch_size,axis=0)
     return new_batch + repeated_single
+
+
+def batch_kl_diag_mvn(mu1, mu2, var1, var2):
+    '''batched KL divergence between two Gaussian distributions with
+    diagonal covariance matrix. This assumes the batch dimension comes
+    first and the dimensions of the covariance matrices are second.'''
+
+    N = mu1.shape[1]
+    logdet1 = tf.math.log(tf.reduce_sum(mu1,axis=1))
+    logdet2 = tf.math.log(tf.reduce_sum(mu2,axis=1))
+    prec2 = var2**-1
+    tr = tf.reduce_sum(prec2 * var1)
+    delta_mu_sq = (mu_2 - mu1)**2
+    inner_prod_mu = tf.reduce_sum(delta_mu_sq * prec2, axis=1)
+    return 0.5 * (logdet2 - logdet1 + tr + inner_prod_mu - N)

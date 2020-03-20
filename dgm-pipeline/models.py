@@ -63,9 +63,10 @@ class GAN(GenerativeModel):
         # load in the discriminator
         with open(SPECS_DIR + spec['inference_net']) as inf_src:
             inf_spec = inf_src.read()
+
         inf_spec = utils.fix_batch_shape(inf_spec, [None]+ list(self.image_dims))
         self.inference_net = tf.keras.models.model_from_json(inf_spec)
-
+    
         self.d_loss_fn, self.g_loss_fn = utils.get_wgan_losses_fn()
 
         self.G_optimizer = tf.keras.optimizers.Adam(learning_rate=spec['learning_rate'], beta_1=0.5)
@@ -128,12 +129,9 @@ class GAN(GenerativeModel):
         x = self.decode(z,apply_sigmoid=True)
         return x.numpy()
 
-    def decode(self, z, apply_sigmoid=False):
-        logits = self.generative_net(z)
-        if apply_sigmoid:
-            probs = tf.sigmoid(logits)
-            return probs
-        return logits
+    def decode(self, z):
+        x = self.generative_net(z)
+        return x
 
 
 class VAE(GenerativeModel):
@@ -185,6 +183,7 @@ class VAE(GenerativeModel):
         return logits
 
     def train(self,dataset,loss_update=100):
+
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
         settings = self.spec['opt_kwargs']
@@ -203,14 +202,26 @@ class VAE(GenerativeModel):
 
     
 
+'''
+@tf.function
+def vae_beta_loss(model, x):'''
+
+@tf.function
+def cross_ent_loss(x_logit, x_label, axis=[1,2,3]):
+    cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x_label)
+    loss = -tf.reduce_sum(cross_ent, axis=axis)
+    return loss
+
+@tf.function
+def beta_loss(a, b, x_label, axis=[1,2,3]):
+    pass
+
 @tf.function
 def vae_cross_ent_loss(model, x):
     mean, logvar = model.encode(x)
     z = model.reparameterize(mean, logvar)
     x_logit = model.decode(z)
-
-    cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
-    logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
+    logpx_z = cross_ent_loss(x_logit, x)
     logpz = utils.log_normal_pdf(z, 0., 0.)
     logqz_x = utils.log_normal_pdf(z, mean, logvar)
     return -tf.reduce_mean(logpx_z + logpz - logqz_x)

@@ -1,2 +1,2 @@
-{"inpaint_method": "langevin", "prior_type": "normal", "prior_scale": 1, "loss": "cross_entropy", "optimizer": "sgd", "learning_rate": 0.01, "iterations": 5000, "n_samples": 100, "noise_decay": 0.001, "noise_sd": 0.1, "logits_generated": true, "save_name": "inpaint_test.npy", "return_history": true, "save_interval": 20,
-"use_metropolis":true,"skip_grad":false}
+{"inpaint_method": "langevin", "prior_type": "normal", "prior_scale": 1, "loss": "cross_entropy", "optimizer": "sgd", "learning_rate": 0.01, "iterations": 5000, "n_samples": 100, "noise_decay": 0.001, "noise_sd": 0.1, "logits_generated": true, "save_name": "inpaint_test.npy", "return_history": true, "save_interval": 20,"from_logits":false,
+"use_metropolis":true,"skip_grad":false,"apply_tiling":false}
