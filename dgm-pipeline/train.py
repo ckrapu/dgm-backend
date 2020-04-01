@@ -3,13 +3,15 @@ import json
 
 import numpy as np
 
-from models import VAE, GAN
-from utils  import describe_spec, get_diagnostics, prep_data
+from models   import VAE, GAN
+from utils    import describe_spec, get_diagnostics, prep_data
 
 SAVED_MODELS_DIR = '../data/saved_models/'
 DTYPE            = 'float32'
 
-model_mapping= {'vae':VAE,'gan':GAN}
+model_mapping   = {'vae':VAE,
+                   'gan':GAN}
+
 
 def init_model(spec):
 
