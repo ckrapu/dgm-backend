@@ -111,12 +111,12 @@ def gradient_penalty(f, real, fake):
 
 def flatten_image_batch(x,nrows,ncols):
     # Convert 3D array of images into a tiled 2D image
-    height,width = x.shape[1:3]
-    out = np.empty([nrows*height, ncols*width])
+    height,width,channels = x.shape[1:]
+    out = np.empty([nrows*height, ncols*width,channels])
     for i in range(nrows):
         for j in range(ncols):
             out[i*height:(i+1)*height,j*width:(j+1)*width] = x[i*nrows+j]
-    return out
+    return np.squeeze(out)
 
 def read_and_resize(path,units,order):
     '''Open JSON spec for Keras model and resize
@@ -168,7 +168,7 @@ def prep_data(array,spec,normalizer=norm_zero_one):
     n = array.shape[0]
     data = normalizer(array)
     raw = tf.data.Dataset.from_tensor_slices(data)
-    return raw.shuffle(n).batch(batch_size)
+    return raw.shuffle(n).batch(batch_size,drop_remainder=True)
 
 def fix_batch_shape(spec,shape,order=0):
     if isinstance(spec,str):
