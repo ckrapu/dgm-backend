@@ -1,12 +1,33 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Input, Conv2D, Conv2DTranspose, BatchNormalization, Reshape, Flatten
+from numpy import product
+
 
 '''Code for automatically creating Keras models adapted to different datasets following
 general templates.'''
 
+def test_encoder(output_dim,image_shape,final_activation=None):
+    '''Simple dense inference network used for debugging.'''
+    model = tf.keras.models.Sequential()
+    model.add(Input(image_shape))
+    model.add(Flatten())
+    model.add(Dense(100,activation='relu'))
+    model.add(Dense(50,activation='relu'))
+    model.add(Dense(output_dim,activation=final_activation))
+    return model
+
+def test_decoder(input_dim,image_shape,final_activation=None):
+    '''Simple dense generative network used for debugging.'''
+    model = tf.keras.models.Sequential()
+    model.add(Dense(50, input_dim=input_dim,activation='relu'))
+    model.add(Dense(100,activation='relu'))
+    model.add(Dense(int(product(image_shape)),activation=final_activation))
+    model.add(Reshape(image_shape))
+    return model
+
 def conv_decoder(input_dim,image_shape,n_dense_layers=2,
                  dense_units=128, n_upsample=2, n_conv_units_initial=128, activation='relu',
-                 filter_size=5,final_activation='sigmoid',use_batchnorm=False):
+                 filter_size=5,final_activation=None,use_batchnorm=False):
     
     '''Automatically generates a Keras model for a simple convolutional decoder.'''
     
@@ -38,17 +59,14 @@ def conv_decoder(input_dim,image_shape,n_dense_layers=2,
     # Use alternating transpose and convolution layers to eliminate 
     # checkerboard artifacts
     for i in range(n_upsample-1):
+        n_conv_units = int(n_conv_units / 2)
         model.add(Conv2DTranspose(n_conv_units, filter_size, strides=2, padding='same',activation=activation,use_bias=use_bias))
-        if use_batchnorm: model.add(BatchNormalization())
-
         model.add(Conv2D(n_conv_units, filter_size, padding='same',activation=activation,use_bias=use_bias))
         if use_batchnorm: model.add(BatchNormalization())
 
-        n_conv_units = int(n_conv_units / 2)
-        
-    model.add(Conv2DTranspose(n_conv_units, filter_size, strides=2, padding='same',activation=activation,use_bias=use_bias))
-    if use_batchnorm: model.add(BatchNormalization())
-
+    n_conv_units = int(n_conv_units / 2)
+ 
+    model.add(Conv2DTranspose(n_conv_units, filter_size, strides=2, padding='same',activation=activation,use_bias=True))
     model.add(Conv2D(channels, 3, padding='same',activation=final_activation))
     return model
 
@@ -60,7 +78,10 @@ def conv_encoder(output_dim,image_shape,n_downsample=2,n_dense_layers=2,dense_un
     model.add(Input(image_shape))
     use_bias = ~use_batchnorm
     
-    n_conv_units = n_conv_units_initial
+    model.add(Conv2D(n_conv_units_initial,filter_size,strides=1,padding='same',activation=activation,use_bias=use_bias))
+
+    n_conv_units = 2*n_conv_units_initial
+
     for i in range(n_downsample):
         model.add(Conv2D(n_conv_units,filter_size,strides=2,padding='same',activation=activation,use_bias=use_bias))
         if use_batchnorm: model.add(BatchNormalization())
