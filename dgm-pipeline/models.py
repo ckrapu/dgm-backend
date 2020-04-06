@@ -5,17 +5,52 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from functools import partial
-from tqdm      import trange
+from tqdm      import trange, tqdm
 from os        import remove
 from os.path   import exists
+from builders import conv_decoder, conv_encoder, test_decoder, test_encoder
+
+builder_mapping = {'conv_decoder':conv_decoder,
+                   'conv_encoder':conv_encoder,
+                   'test_decoder':test_decoder,
+                   'test_encoder':test_encoder}
 
 SPECS_DIR = '../model_specs/network_specs/'
 VIZ_DIR   = '../data/visualizations/'  
 
 class GenerativeModel(tf.keras.Model):
     '''Common class for deep generative models'''
-    def __init__(self):
-        super(GenerativeModel, self).__init__()
+    def __init__(self,spec):
+        super().__init__()
+
+        self.spec = spec
+        self.latent_dim = spec['latent_dim']
+        self.image_dims = spec['image_dims']
+
+    def create_generator(self):
+        # Create generator and fix the input size
+        if 'json' in self.spec['generative_net']:
+            with open(SPECS_DIR + self.spec['generative_net']) as gen_src:
+                gen_spec = gen_src.read()
+            gen_spec = utils.fix_batch_shape(gen_spec, [None,self.latent_dim])
+            self.generative_net = tf.keras.models.model_from_json(gen_spec)
+        else:
+            network_builder = builder_mapping[self.spec['generative_net']]
+            kw = self.spec['generative_net_kwargs']
+            self.generative_net = network_builder(self.latent_dim, self.image_dims, **kw)
+    
+    def create_inference(self,output_shape=1):
+        if 'json' in self.spec['inference_net']:
+            with open(SPECS_DIR + self.spec['inference_net']) as inf_src:
+                inf_spec = inf_src.read()
+
+            inf_spec = utils.fix_batch_shape(inf_spec, [None]+ list(self.image_dims))
+            self.inference_net = tf.keras.models.model_from_json(inf_spec)
+        else:
+            network_builder = builder_mapping[self.spec['inference_net']]
+            kw = self.spec['inference_net_kwargs']
+
+            self.inference_net = network_builder(output_shape, self.image_dims, **kw)
 
     def save(self, prefix, overwrite=True):
         has_generator = hasattr(self, 'generative_net')
@@ -39,33 +74,51 @@ class GenerativeModel(tf.keras.Model):
     def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={}):
         '''Plot samples drawn from prior for generative model.'''
         x = self.sample(n=n)
-        flat_x = utils.flatten_image_batch(x.squeeze(), nrows=nrows, ncols=ncols)
+        flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
         ax = plt.imshow(flat_x, **plot_kwargs)
         return ax
 
+    def test_batch(self):
+        if hasattr(self,'dataset'):
+            iterator = self.dataset.as_numpy_iterator()
+            return next(iterator)
+
+        else:
+            raise ValueError('Dataset has not been set for this model yet.')
+
+    def create_masked_logp_fn(masked_batch,loss_elemwise_fn,final_activation_fn=None):
+
+        is_masked = masked_batch.mask
+        is_used   = 1 - is_masked
+
+        def logp(z):
+            x = self.generative_net(z)
+            if final_activation is not None:
+                x = final_activation(x)
+                
+            loss_elemwise = loss_elemwise_fn(masked_batch, x)
+
+            # The argument to reduce sum should have 4 dimensions
+            loglik = -tf.reduce_sum(loss_elemwise * is_used, axis=1,2,3)
+            return loglik + self.log_prior_fn(z)
+
+        return logp  
+        
 
 class GAN(GenerativeModel):
 
     '''Class for training and sampling from a generative adversarial network.
     This implementation uses Wasserstein loss with gradient penalty.'''
     def __init__(self, spec):
-        super(GAN, self).__init__()
-        self.spec = spec
-        self.latent_dim = spec['latent_dim']
-        self.image_dims = spec['image_dims']
+        super().__init__(spec)
+        
 
-        # Create generator and fix the input size
-        with open(SPECS_DIR + spec['generative_net']) as gen_src:
-            gen_spec = gen_src.read()
-        gen_spec = utils.fix_batch_shape(gen_spec, [None,self.latent_dim])
-        self.generative_net = tf.keras.models.model_from_json(gen_spec)
+        self.create_generator()
+        self.create_inference(output_shape=1)
 
-        # load in the discriminator
-        with open(SPECS_DIR + spec['inference_net']) as inf_src:
-            inf_spec = inf_src.read()
-
-        inf_spec = utils.fix_batch_shape(inf_spec, [None]+ list(self.image_dims))
-        self.inference_net = tf.keras.models.model_from_json(inf_spec)
+        # Assumes that batch of z variable will have shape
+        # [batch_size X latent_dim]
+        self.log_prior_fn = lambda z: -tf.reduce_sum(z**2,axis=-1)/2
     
         self.d_loss_fn, self.g_loss_fn = utils.get_wgan_losses_fn()
 
@@ -106,11 +159,12 @@ class GAN(GenerativeModel):
 
         return {'d_loss': x_real_d_loss + x_fake_d_loss, 'gp': gp}
 
-    def train(self,dataset,loss_update=100):
-        t = trange(self.spec['epochs'],desc='Loss')
-        for e in t:
-
-            for j,x_real in enumerate(dataset):
+    def train(self,loss_update=100):
+        
+        self.loss_history = []
+        for e in range(self.spec['epochs']):
+            t = tqdm(enumerate(self.dataset),desc='Loss')
+            for j,x_real in t:
                 D_loss_dict = self.train_discriminator(x_real)
 
                 if self.D_optimizer.iterations.numpy() % self.spec['gen_train_steps']== 0:
@@ -122,6 +176,7 @@ class GAN(GenerativeModel):
                     gen_loss = G_loss_dict['g_loss']
                     loss_str = f'Loss - Discriminator: {disc_loss}, Generator: {gen_loss}, Gradient Penalty: {gp_loss}'
                     t.set_description(loss_str)
+                    self.loss_history.append([disc_loss, gp_loss, gen_loss])
 
     def sample(self,z=None,n=100):
         if z is None:
@@ -129,37 +184,26 @@ class GAN(GenerativeModel):
         x = self.decode(z,apply_sigmoid=True)
         return x.numpy()
 
-    def decode(self, z):
-        x = self.generative_net(z)
-        return x
+    def decode(self, z, apply_sigmoid=False):
+        logits = self.generative_net(z)
+        if apply_sigmoid:
+            probs = tf.sigmoid(logits)
+            return probs
+        return logits
+    
 
 
 class VAE(GenerativeModel):
     '''Class for training and sampling from a variational autoencoder'''
     def __init__(self, spec):
-        super(VAE, self).__init__()
-        self.spec = spec
-        self.latent_dim = spec['latent_dim']
-        self.image_dims = spec['image_dims']
+        super().__init__(spec)
 
-        # Resize the last layer of the inference net
-        # to have size 2 * latent_dim for both mean and log variance
-        # of latent codes
-        inf_spec = utils.read_and_resize(SPECS_DIR + spec['inference_net'],
-                                   self.latent_dim*2, -1)
-        inf_spec = utils.fix_batch_shape(inf_spec, [None] + list(self.image_dims))
+        self.create_generator()
+        self.create_inference(output_shape=self.latent_dim*2)
 
-        self.inference_net = tf.keras.models.model_from_json(inf_spec)
-
-        with open(SPECS_DIR + spec['generative_net'],'r') as src:
-            gen_spec = json.loads(src.read())
-
-        # Fix number of channels from last layer of generator
-        gen_spec = utils.resize_layer(gen_spec, spec['channels'],-1)
-        gen_spec = utils.fix_batch_shape(gen_spec, [None,self.latent_dim])
-
-        #gen_spec_str = json.dumps(gen_spec)
-        self.generative_net = tf.keras.models.model_from_json(gen_spec)
+        # Assumes that batch of z variable will have shape
+        # [batch_size X latent_dim]
+        self.log_prior_fn = lambda z: -tf.reduce_sum(z**2,axis=-1)/2
 
     def sample(self, z=None, n=100):
         if z is None:
@@ -182,7 +226,16 @@ class VAE(GenerativeModel):
             return probs
         return logits
 
-    def train(self,dataset,loss_update=100):
+    @staticmethod
+    @tf.function
+    def compute_apply_gradients(model, optimizer, x, loss_fn):
+        with tf.GradientTape() as tape:
+            loss = loss_fn(model, x)
+            gradients = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        return loss
+
+    def train(self,loss_update=100):
 
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
@@ -193,18 +246,37 @@ class VAE(GenerativeModel):
             raise NotImplementedError('Other optimizers are not \
                                       yet supported.')
         t = trange(self.spec['epochs'],desc='Loss')
+        self.loss_history = []
+
+        # Control representation capacity per Burgess et al. 2018
+        # 'Understanding disentangling in beta-VAE'
+        if 'vae_beta' in self.spec.keys():
+            beta = self.spec['vae_beta']
+        else:
+            beta = 1.
+        
+        loglik_type = self.spec['likelihood']
+        if loglik_type == 'bernoulli':
+            loglik = cross_ent_loss
+        elif loglik_type == 'normal':
+            loglik = square_loss
+        else:
+            raise ValueError('Likelihood argument not understood. Try one of "bernoulli" or "normal".')
+
+        vae_loss_fn = partial(vae_loss, loglik=loglik, beta=beta)
+
         for i in t:
-            for j,minibatch in enumerate(dataset):
-                loss = compute_apply_gradients(self, minibatch,
-                                        self.optimizer, vae_cross_ent_loss)
+            for j,minibatch in enumerate(self.dataset):
+                loss = self.compute_apply_gradients(self, self.optimizer, minibatch, vae_loss_fn)
                 if j % loss_update == 0:
                     t.set_description('Loss=%g' % loss)
+                self.loss_history.append(loss)
 
-    
 
-'''
 @tf.function
-def vae_beta_loss(model, x):'''
+def square_loss(x_pred, x_true, sd=1, axis=[1,2,3,]):
+    error = (x_pred-x_true)**2 / (2*sd**2)
+    return -tf.reduce_sum(error,axis=axis)   
 
 @tf.function
 def cross_ent_loss(x_logit, x_label, axis=[1,2,3]):
@@ -217,19 +289,24 @@ def beta_loss(a, b, x_label, axis=[1,2,3]):
     pass
 
 @tf.function
-def vae_cross_ent_loss(model, x):
+def vae_loss(model, x, loglik, beta=1.):
+    mean, logvar = model.encode(x)
+    z = model.reparameterize(mean, logvar)
+    x_pred = model.decode(z)
+    logpx_z = loglik(x_pred, x)
+    logpz = utils.log_normal_pdf(z, 0., 0.)
+    logqz_x = utils.log_normal_pdf(z, mean, logvar)
+    kld = logqz_x - logpz
+    return -tf.reduce_mean(logpx_z - beta*kld)
+
+@tf.function
+def vae_cross_ent_loss(model, x, beta=1.):
     mean, logvar = model.encode(x)
     z = model.reparameterize(mean, logvar)
     x_logit = model.decode(z)
     logpx_z = cross_ent_loss(x_logit, x)
     logpz = utils.log_normal_pdf(z, 0., 0.)
     logqz_x = utils.log_normal_pdf(z, mean, logvar)
-    return -tf.reduce_mean(logpx_z + logpz - logqz_x)
+    kld = logqz_x - logpz
+    return -tf.reduce_mean(logpx_z - beta*kld)
 
-@tf.function
-def compute_apply_gradients(model, x, optimizer,loss_fn):
-    with tf.GradientTape() as tape:
-        loss = loss_fn(model, x)
-        gradients = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    return loss
