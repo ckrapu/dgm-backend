@@ -17,6 +17,7 @@ builder_mapping = {'conv_decoder':conv_decoder,
 
 SPECS_DIR = '../model_specs/network_specs/'
 VIZ_DIR   = '../data/visualizations/'  
+DTYPE     = 'float32'
 
 class GenerativeModel(tf.keras.Model):
     '''Common class for deep generative models'''
@@ -86,20 +87,20 @@ class GenerativeModel(tf.keras.Model):
         else:
             raise ValueError('Dataset has not been set for this model yet.')
 
-    def create_masked_logp_fn(masked_batch,loss_elemwise_fn,final_activation_fn=None):
+    def create_masked_logp_fn(self,masked_batch,loss_elemwise_fn,loss_kwargs={},final_activation_fn=None):
 
         is_masked = masked_batch.mask
         is_used   = 1 - is_masked
 
         def logp(z):
             x = self.generative_net(z)
-            if final_activation is not None:
-                x = final_activation(x)
-                
-            loss_elemwise = loss_elemwise_fn(masked_batch, x)
+            if final_activation_fn is not None:
+                x = final_activation_fn(x)
+
+            loss_elemwise = loss_elemwise_fn(masked_batch.data, x, **loss_kwargs)
 
             # The argument to reduce sum should have 4 dimensions
-            loglik = -tf.reduce_sum(loss_elemwise * is_used, axis=1,2,3)
+            loglik = -tf.reduce_sum(loss_elemwise * is_used, axis=[1,2,3])
             return loglik + self.log_prior_fn(z)
 
         return logp  
