@@ -1,5 +1,6 @@
 import json
 import utils
+import builders as bld
 
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -8,16 +9,16 @@ from functools import partial
 from tqdm      import trange, tqdm
 from os        import remove
 from os.path   import exists
-from builders import conv_decoder, conv_encoder, test_decoder, test_encoder
 
-builder_mapping = {'conv_decoder':conv_decoder,
-                   'conv_encoder':conv_encoder,
-                   'test_decoder':test_decoder,
-                   'test_encoder':test_encoder}
+builder_mapping = {'conv_decoder':bld.conv_decoder,
+                   'conv_encoder':bld.conv_encoder,
+                   'test_decoder':bld.test_decoder,
+                   'test_encoder':bld.test_encoder,
+                   'resnet_decoder':bld.resnet_decoder,
+                   'resnet_encoder':bld.resnet_encoder}
 
 SPECS_DIR = '../model_specs/network_specs/'
 VIZ_DIR   = '../data/visualizations/'  
-DTYPE     = 'float32'
 
 class GenerativeModel(tf.keras.Model):
     '''Common class for deep generative models'''
@@ -53,6 +54,13 @@ class GenerativeModel(tf.keras.Model):
 
             self.inference_net = network_builder(output_shape, self.image_dims, **kw)
 
+    def load_pretrained(self, gen_path=None, inf_path=None):
+        if gen_path is not None:
+            self.generative_net = tf.keras.models.load_model(gen_path)
+        
+        if inf_path is not None:
+            self.inference_net = tf.keras.models.load_model(inf_path)
+
     def save(self, prefix, overwrite=True):
         has_generator = hasattr(self, 'generative_net')
         has_inference = hasattr(self, 'inference_net')
@@ -87,21 +95,26 @@ class GenerativeModel(tf.keras.Model):
         else:
             raise ValueError('Dataset has not been set for this model yet.')
 
-    def create_masked_logp_fn(self,masked_batch,loss_elemwise_fn,loss_kwargs={},final_activation_fn=None):
+    def create_masked_logp_fn(self,masked_batch,loss_elemwise_fn,loss_kwargs={},
+                              final_activation_fn=None,dtype='float32',temperature=1.):
 
         is_masked = masked_batch.mask
-        is_used   = 1 - is_masked
+        is_used   = tf.cast(1 - is_masked,dtype)
+        raw_data = tf.cast(masked_batch.data, dtype)
 
         def logp(z):
             x = self.generative_net(z)
             if final_activation_fn is not None:
                 x = final_activation_fn(x)
 
-            loss_elemwise = loss_elemwise_fn(masked_batch.data, x, **loss_kwargs)
+            loss_elemwise = loss_elemwise_fn(raw_data, x, **loss_kwargs)
 
             # The argument to reduce sum should have 4 dimensions
             loglik = -tf.reduce_sum(loss_elemwise * is_used, axis=[1,2,3])
-            return loglik + self.log_prior_fn(z)
+
+            # We can use hot / cold posteriors by altering
+            # the temperature value
+            return temperature*loglik + self.log_prior_fn(z)
 
         return logp  
         
@@ -227,11 +240,14 @@ class VAE(GenerativeModel):
             return probs
         return logits
 
+    def set_beta_schedule(self,schedule):
+        self.beta_schedule = schedule
+
     @staticmethod
     @tf.function
-    def compute_apply_gradients(model, optimizer, x, loss_fn):
+    def compute_apply_gradients(model, optimizer, x, loss_fn,beta=1.):
         with tf.GradientTape() as tape:
-            loss = loss_fn(model, x)
+            loss = loss_fn(model, x, beta=beta)
             gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         return loss
@@ -264,11 +280,16 @@ class VAE(GenerativeModel):
         else:
             raise ValueError('Likelihood argument not understood. Try one of "bernoulli" or "normal".')
 
-        vae_loss_fn = partial(vae_loss, loglik=loglik, beta=beta)
+        vae_loss_fn = partial(vae_loss, loglik=loglik)
 
         for i in t:
             for j,minibatch in enumerate(self.dataset):
-                loss = self.compute_apply_gradients(self, self.optimizer, minibatch, vae_loss_fn)
+                if hasattr(self,'beta_schedule'):
+                    beta_current = self.beta_schedule[i]
+                else:
+                    beta_current = beta
+                loss = self.compute_apply_gradients(self, self.optimizer, 
+                                                    minibatch, vae_loss_fn, beta=beta_current)
                 if j % loss_update == 0:
                     t.set_description('Loss=%g' % loss)
                 self.loss_history.append(loss)
@@ -298,7 +319,7 @@ def vae_loss(model, x, loglik, beta=1.):
     logpz = utils.log_normal_pdf(z, 0., 0.)
     logqz_x = utils.log_normal_pdf(z, mean, logvar)
     kld = logqz_x - logpz
-    return -tf.reduce_mean(logpx_z - beta*kld)
+    return -tf.reduce_mean(logpx_z - beta * kld)
 
 @tf.function
 def vae_cross_ent_loss(model, x, beta=1.):
@@ -311,3 +332,6 @@ def vae_cross_ent_loss(model, x, beta=1.):
     kld = logqz_x - logpz
     return -tf.reduce_mean(logpx_z - beta*kld)
 
+@tf.function
+def wrapped_cross_ent(true,pred):
+    return tf.nn.sigmoid_cross_entropy_with_logits(logits=pred,labels=true)
