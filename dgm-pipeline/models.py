@@ -225,7 +225,7 @@ class GAN(GenerativeModel):
 
         return {'d_loss': x_real_d_loss + x_fake_d_loss, 'gp': gp}
 
-    def train(self,loss_update=100,epochs=None):
+    def train(self, loss_update=100, epochs=None, plot_after_epoch=True):
         
         self.loss_history = []
 
@@ -249,6 +249,8 @@ class GAN(GenerativeModel):
                     loss_str = f'Loss - Discriminator: {disc_loss}, Generator: {gen_loss}, Gradient Penalty: {gp_loss}'
                     t.set_description(loss_str)
                     self.loss_history.append([disc_loss, gp_loss, gen_loss])
+            if plot_after_epoch:
+                self.plot_sample()
 
 
 class VAE(GenerativeModel):
@@ -276,14 +278,14 @@ class VAE(GenerativeModel):
 
     @staticmethod
     @tf.function
-    def compute_apply_gradients(model, optimizer, x, loss_fn,beta=1.):
+    def compute_apply_gradients(model, optimizer, x, loss_fn, beta=1.):
         with tf.GradientTape() as tape:
             loss = loss_fn(model, x, beta=beta)
             gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         return loss
 
-    def train(self,loss_update=100,epochs=None):
+    def train(self, loss_update=100, epochs=None, plot_after_epoch=True):
 
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
@@ -338,7 +340,8 @@ class VAE(GenerativeModel):
                 if j % loss_update == 0:
                     t.set_description('Loss=%g' % loss)
                 self.loss_history.append(loss)
-
+            if plot_after_epoch:
+                self.plot_sample()
 
 @tf.function
 def square_loss(x_pred, x_true, sd=1, axis=[1,2,3,]):
