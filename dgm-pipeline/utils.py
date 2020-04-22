@@ -14,6 +14,15 @@ from tensorflow.keras.backend import binary_crossentropy, abs
 
 valid_loss   = ['cross_entropy', 'mse', 'mae']
 
+def toggle_training_layers(model):
+    '''
+    Flips behavior of layers in Keras model from trainable
+    to not trainable. This is especially useful when using 
+    batch normalization during test time.
+    '''
+    for layer in model.layers:
+        layer.trainable = not layer.trainable
+
 def parse_spec_loss(loss_type,kwargs={}):
     if loss_type == 'cross_entropy':
         loss_fn  = partial(binary_crossentropy,from_logits=kwargs['from_logits'])
@@ -37,13 +46,6 @@ def eval_function(pred, true, function, sample_axis=0):
 def is_covered(pred, true, width=90):
     high, low = np.percentile(pred,q=[width, 1-width])
     return np.logical_and(high > true, true > low)
-
-def switch_bn_mode(model):
-    '''Toggle training behavior for batch norm layers in a Model.'''
-    for layer in model.layers:
-        if isinstance(layer, BatchNormalization):
-            layer.trainable = not layer.trainable
-    return model
 
 def parse_spec_optimizer(spec, valid_opt=['adam','sgd']):
     '''Create Keras optimizer object from JSON specification.'''

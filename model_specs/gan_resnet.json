@@ -1,0 +1,6 @@
+{"model_type": "gan", "latent_dim": 8, "inference_net": "resnet_encoder",
+    "inference_net_kwargs":{"use_layernorm":true}, "generative_net": "resnet_decoder","generative_net_kwargs":{"use_batchnorm":true}, "optimizer": "adam", "opt_kwargs": {}, "epochs": 100, "batch_size": 32, "name": "gan_resnet", "gradient_penalty": 10, "gen_train_steps": 2, "learning_rate": 0.0002,"from_logits":false}
+
+
+
+    

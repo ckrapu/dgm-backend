@@ -1,6 +1,7 @@
 
 # Exclude saved models, datasets, and other modeling assets
-
-/dgm-backend/notebooks/*
+/dgm-pipeline/.vscode/
+/dgm-pipeline/notebooks/*
 /data/*
 *.DS_Store
+*.ipynb

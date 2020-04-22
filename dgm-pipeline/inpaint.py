@@ -61,7 +61,7 @@ def inpaint(model_path, spec_path, data_path, save=True, **kwargs):
     if save:
         np.save(COMPLETION_DIR+spec['save_name'], samples)
 
-    return samples, loss
+    return samples, loss, sampler
 
 if __name__ == '__main__':
   fire.Fire(inpaint)

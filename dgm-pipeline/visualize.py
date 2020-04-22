@@ -29,7 +29,7 @@ def samples2gif(samples,output_path, nrows, ncols,
         if masked_picture_path is not None:
             x = replace_batch_with_masked(mask_single,x)
 
-        flat_x = flatten_image_batch(x.squeeze(), nrows, ncols)
+        flat_x = flatten_image_batch(x, nrows, ncols)
         filepath = directory + f'gif_frame_{i}.png'
 
         if figsize is not None:

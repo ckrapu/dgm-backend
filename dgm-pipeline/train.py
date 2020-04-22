@@ -4,7 +4,7 @@ import json
 import numpy as np
 
 from models   import VAE, GAN
-from utils    import describe_spec, get_diagnostics, prep_data
+from utils    import describe_spec, get_diagnostics, prep_data, toggle_training_layers
 
 SAVED_MODELS_DIR = '../data/saved_models/'
 DTYPE            = 'float32'
@@ -56,8 +56,11 @@ def train(data_path, model_spec_path, save=True, **kwargs):
   dataset = prep_data(data,spec)
 
   model = init_model(spec)
+  model.dataset = dataset
 
-  model.train(dataset)
+  model.train()
+  
+  toggle_training_layers(model)
 
   if save:
     model.save(SAVED_MODELS_DIR + spec['name'])

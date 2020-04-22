@@ -1,0 +1,1 @@
+{"model_type": "vae", "latent_dim": 8, "inference_net": "conv_encoder","inference_net_kwargs":{"use_batchnorm":true}, "generative_net": "conv_decoder","generative_net_kwargs":{"use_batchnorm":true}, "optimizer": "adam", "opt_kwargs": {"learning_rate":0.0001}, "epochs": 5, "batch_size": 32,"likelihood":"normal","error_trainable":true, "name": "vae_basic"}
