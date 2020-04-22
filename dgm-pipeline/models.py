@@ -154,11 +154,11 @@ class GenerativeModel(tf.keras.Model):
         return iscore
 
     def decode(self, z, apply_sigmoid=False):
-        logits = self.generative_net(z)
+        raw = self.generative_net(z)
         if apply_sigmoid:
-            probs = tf.sigmoid(logits)
+            probs = tf.sigmoid(raw)
             return probs
-        return logits
+        return raw
 
     def sample(self, z=None, n=100, prior=tf.random.normal, apply_sigmoid=False):
         if z is None:
