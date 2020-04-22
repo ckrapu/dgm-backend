@@ -145,7 +145,7 @@ class GenerativeModel(tf.keras.Model):
         using an externally trained classifier.
         '''
 
-        if not hasattr(self,'scores')
+        if not hasattr(self,'scores'):
             self.scores = {}
 
         xs = self.sample(n)
@@ -288,7 +288,7 @@ class VAE(GenerativeModel):
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         return loss
 
-    def train(self,loss_update=100):
+    def train(self,loss_update=100,error_trainable=True):
 
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
@@ -309,10 +309,18 @@ class VAE(GenerativeModel):
             beta = 1.
         
         loglik_type = self.spec['likelihood']
+
         if loglik_type == 'bernoulli':
             loglik = cross_ent_loss
+
         elif loglik_type == 'normal':
-            loglik = square_loss
+            # Enables the error sd to be variable and
+            # learned by the data
+            if self.spec['error_trainable']:
+                self.error_sd = tf.Variable(0.1)
+            else:
+                self.error_sd = 0.1
+            loglik = partial(square_loss, sd=self.error_sd)
         else:
             raise ValueError('Likelihood argument not understood. Try one of "bernoulli" or "normal".')
 
@@ -342,8 +350,10 @@ def cross_ent_loss(x_logit, x_label, axis=[1,2,3]):
     loss = -tf.reduce_sum(cross_ent, axis=axis)
     return loss
 
+#TODO: Implement the beta likelihood
 @tf.function
 def beta_loss(a, b, x_label, axis=[1,2,3]):
+
     pass
 
 @tf.function
