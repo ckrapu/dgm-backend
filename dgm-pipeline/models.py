@@ -96,11 +96,11 @@ class GenerativeModel(tf.keras.Model):
         if not (has_generator or has_inference):
             raise ValueError('No model object found for saving.')
     
-    def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={}):
+    def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={},apply_sigmoid=False):
         '''
         Plot samples drawn from prior for generative model.
         '''
-        x = self.sample(n=n)
+        x = self.sample(n=n, apply_sigmoid=apply_sigmoid)
         flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
         ax = plt.imshow(flat_x, **plot_kwargs)
         return ax
@@ -152,6 +152,19 @@ class GenerativeModel(tf.keras.Model):
         iscore = qq.inception_score(classifier_path, xs)
         self.scores['inception_score'] = iscore
         return iscore
+
+    def decode(self, z, apply_sigmoid=False):
+        logits = self.generative_net(z)
+        if apply_sigmoid:
+            probs = tf.sigmoid(logits)
+            return probs
+        return logits
+
+    def sample(self, z=None, n=100, prior=tf.random.normal, apply_sigmoid=False):
+        if z is None:
+            z = prior(shape=(n, self.latent_dim))
+            x = self.decode(z, apply_sigmoid=apply_sigmoid)
+        return x.numpy()
         
 
 class GAN(GenerativeModel):
@@ -214,7 +227,7 @@ class GAN(GenerativeModel):
         self.loss_history = []
 
         if epochs is None and 'epochs' in self.spec.keys():
-            epochs = self.spec['epochs'])
+            epochs = self.spec['epochs']
         else:
             raise ValueError('Provide a number of epochs to use via JSON specification or keyword argument.')
 
@@ -234,20 +247,6 @@ class GAN(GenerativeModel):
                     t.set_description(loss_str)
                     self.loss_history.append([disc_loss, gp_loss, gen_loss])
 
-    def sample(self,z=None,n=100):
-        if z is None:
-            z = tf.random.normal(shape=(n, self.latent_dim))
-        x = self.decode(z,apply_sigmoid=True)
-        return x.numpy()
-
-    def decode(self, z, apply_sigmoid=False):
-        logits = self.generative_net(z)
-        if apply_sigmoid:
-            probs = tf.sigmoid(logits)
-            return probs
-        return logits
-    
-
 
 class VAE(GenerativeModel):
     '''Class for training and sampling from a variational autoencoder'''
@@ -261,12 +260,6 @@ class VAE(GenerativeModel):
         # [batch_size X latent_dim]
         self.log_prior_fn = lambda z: -tf.reduce_sum(z**2,axis=-1)/2
 
-    def sample(self, z=None, n=100):
-        if z is None:
-            z = tf.random.normal(shape=(n, self.latent_dim))
-            x = self.decode(z, apply_sigmoid=True)
-        return x.numpy()
-
     def encode(self, x):
         mean, logvar = tf.split(self.inference_net(x), num_or_size_splits=2, axis=1)
         return mean, logvar
@@ -274,13 +267,6 @@ class VAE(GenerativeModel):
     def reparameterize(self, mean, logvar):
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logvar * .5) + mean
-
-    def decode(self, z, apply_sigmoid=False):
-        logits = self.generative_net(z)
-        if apply_sigmoid:
-            probs = tf.sigmoid(logits)
-            return probs
-        return logits
 
     def set_beta_schedule(self,schedule):
         self.beta_schedule = schedule
@@ -306,7 +292,7 @@ class VAE(GenerativeModel):
                                       yet supported.')
 
         if epochs is None and 'epochs' in self.spec.keys():
-            epochs = self.spec['epochs'])
+            epochs = self.spec['epochs']
         else:
             raise ValueError('Provide a number of epochs to use via JSON specification or keyword argument.')
 
@@ -365,7 +351,6 @@ def cross_ent_loss(x_logit, x_label, axis=[1,2,3]):
 #TODO: Implement the beta likelihood
 @tf.function
 def beta_loss(a, b, x_label, axis=[1,2,3]):
-
     pass
 
 @tf.function
