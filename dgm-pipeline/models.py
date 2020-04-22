@@ -165,6 +165,9 @@ class GenerativeModel(tf.keras.Model):
             z = prior(shape=(n, self.latent_dim))
             x = self.decode(z, apply_sigmoid=apply_sigmoid)
         return x.numpy()
+    def summary(self):
+        self.inference_net.summary()
+        self.generative_net.summary()
         
 
 class GAN(GenerativeModel):
