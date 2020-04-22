@@ -1,6 +1,7 @@
 import json
 import utils
 import builders as bld
+import quality  as q
 
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -30,6 +31,10 @@ class GenerativeModel(tf.keras.Model):
         self.image_dims = spec['image_dims']
 
     def create_generator(self):
+        '''
+        Initialize generative network either via reading
+        a JSON spec or using a function to initialize it.
+        '''
         # Create generator and fix the input size
         if 'json' in self.spec['generative_net']:
             with open(SPECS_DIR + self.spec['generative_net']) as gen_src:
@@ -42,6 +47,10 @@ class GenerativeModel(tf.keras.Model):
             self.generative_net = network_builder(self.latent_dim, self.image_dims, **kw)
     
     def create_inference(self,output_shape=1):
+        '''
+        Initialize inference/decoder network either via reading
+        a JSON spec or using a function to initialize it.
+        '''
         if 'json' in self.spec['inference_net']:
             with open(SPECS_DIR + self.spec['inference_net']) as inf_src:
                 inf_spec = inf_src.read()
@@ -55,6 +64,10 @@ class GenerativeModel(tf.keras.Model):
             self.inference_net = network_builder(output_shape, self.image_dims, **kw)
 
     def load_pretrained(self, gen_path=None, inf_path=None):
+        '''
+        Use pretrained Keras model for either generative or inference
+        network.
+        '''
         if gen_path is not None:
             self.generative_net = tf.keras.models.load_model(gen_path)
         
@@ -62,6 +75,9 @@ class GenerativeModel(tf.keras.Model):
             self.inference_net = tf.keras.models.load_model(inf_path)
 
     def save(self, prefix, overwrite=True):
+        '''
+        Save networks to disk via Keras utilities.
+        '''
         has_generator = hasattr(self, 'generative_net')
         has_inference = hasattr(self, 'inference_net')
 
@@ -81,7 +97,9 @@ class GenerativeModel(tf.keras.Model):
             raise ValueError('No model object found for saving.')
     
     def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={}):
-        '''Plot samples drawn from prior for generative model.'''
+        '''
+        Plot samples drawn from prior for generative model.
+        '''
         x = self.sample(n=n)
         flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
         ax = plt.imshow(flat_x, **plot_kwargs)
@@ -97,7 +115,10 @@ class GenerativeModel(tf.keras.Model):
 
     def create_masked_logp_fn(self,masked_batch,loss_elemwise_fn,loss_kwargs={},
                               final_activation_fn=None,dtype='float32',temperature=1.):
-
+        '''
+        Applies masking to the logged posterior for a set of images
+        according.
+        '''
         is_masked = masked_batch.mask
         is_used   = tf.cast(1 - is_masked,dtype)
         raw_data = tf.cast(masked_batch.data, dtype)
@@ -116,13 +137,28 @@ class GenerativeModel(tf.keras.Model):
             # the temperature value
             return temperature*loglik + self.log_prior_fn(z)
 
-        return logp  
+        return logp
+
+    def inception_score(self, classifier_path,n=10000):
+        '''
+        Calculates the inception score for this model
+        using an externally trained classifier.
+        '''
+
+        if not hasattr(self,'scores')
+            self.scores = {}
+
+        xs = self.sample(n)
+        iscore = qq.inception_score(classifier_path, xs)
+        self.scores['inception_score'] = iscore
+        return iscore
         
 
 class GAN(GenerativeModel):
-
-    '''Class for training and sampling from a generative adversarial network.
-    This implementation uses Wasserstein loss with gradient penalty.'''
+    '''
+    Class for training and sampling from a generative adversarial network.
+    This implementation uses Wasserstein loss with gradient penalty (WGAN-GP).
+    '''
     def __init__(self, spec):
         super().__init__(spec)
         
