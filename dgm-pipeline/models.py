@@ -209,10 +209,16 @@ class GAN(GenerativeModel):
 
         return {'d_loss': x_real_d_loss + x_fake_d_loss, 'gp': gp}
 
-    def train(self,loss_update=100):
+    def train(self,loss_update=100,epochs=None):
         
         self.loss_history = []
-        for e in range(self.spec['epochs']):
+
+        if epochs is None and 'epochs' in self.spec.keys():
+            epochs = self.spec['epochs'])
+        else:
+            raise ValueError('Provide a number of epochs to use via JSON specification or keyword argument.')
+
+        for e in range(epochs):
             t = tqdm(enumerate(self.dataset),desc='Loss')
             for j,x_real in t:
                 D_loss_dict = self.train_discriminator(x_real)
@@ -288,7 +294,7 @@ class VAE(GenerativeModel):
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         return loss
 
-    def train(self,loss_update=100,error_trainable=True):
+    def train(self,loss_update=100,epochs=None):
 
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
@@ -298,8 +304,11 @@ class VAE(GenerativeModel):
         else:
             raise NotImplementedError('Other optimizers are not \
                                       yet supported.')
-        t = trange(self.spec['epochs'],desc='Loss')
-        self.loss_history = []
+
+        if epochs is None and 'epochs' in self.spec.keys():
+            epochs = self.spec['epochs'])
+        else:
+            raise ValueError('Provide a number of epochs to use via JSON specification or keyword argument.')
 
         # Control representation capacity per Burgess et al. 2018
         # 'Understanding disentangling in beta-VAE'
@@ -325,6 +334,9 @@ class VAE(GenerativeModel):
             raise ValueError('Likelihood argument not understood. Try one of "bernoulli" or "normal".')
 
         vae_loss_fn = partial(vae_loss, loglik=loglik)
+
+        t = trange(epochs,desc='Loss')
+        self.loss_history = []
 
         for i in t:
             for j,minibatch in enumerate(self.dataset):
