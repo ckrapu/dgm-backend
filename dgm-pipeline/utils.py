@@ -112,17 +112,23 @@ def gradient_penalty(f, real, fake):
     return gp
 
 def flatten_image_batch(x,nrows,ncols):
-    # Convert 3D array of images into a tiled 2D image
+    '''
+    Convert 3D array of images into a tiled 2D image.
+    '''
     height,width,channels = x.shape[1:]
     out = np.empty([nrows*height, ncols*width,channels])
+    current_idx = 0
     for i in range(nrows):
         for j in range(ncols):
-            out[i*height:(i+1)*height,j*width:(j+1)*width] = x[i*nrows+j]
+            out[i*height:(i+1)*height,j*width:(j+1)*width] = x[current_idx]
+            current_idx += 1
     return np.squeeze(out)
 
 def read_and_resize(path,units,order):
-    '''Open JSON spec for Keras model and resize
-    one of its layers.'''
+    '''
+    Open JSON spec for Keras model and resize
+    one of its layers.
+    '''
     with open(path,'r') as src:
         str_spec = src.read()
     str_dict = json.loads(str_spec)
