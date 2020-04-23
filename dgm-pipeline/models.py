@@ -345,9 +345,9 @@ class VAE(GenerativeModel):
         t = trange(epochs,desc='Loss')
         self.loss_history = []
 
-        for i in t:
+        for current_epoch in t:
             if hasattr(self,'beta_schedule'):
-                self.beta_current = tf.cast(self.beta_schedule[i],dtype='float32')
+                self.beta_current = tf.cast(self.beta_schedule[current_epoch],dtype='float32')
             else:
                 self.beta_current = tf.cast(beta,dtype='float32')
 
@@ -363,7 +363,7 @@ class VAE(GenerativeModel):
             if plot_after_epoch:
                 self.plot_sample()
 
-            if save_interval % i ==0:
+            if current_epoch % save_interval ==0:
                 self.save(SAVED_MODELS_DIR+self.spec['name'])
 
     
