@@ -139,9 +139,9 @@ def test_decoder(input_dim,image_shape,final_activation=None):
     model.add(Reshape(image_shape))
     return model
 
-def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=2,
-                 dense_units=128, n_upsample=2, n_conv_units_initial=256, activation='relu',
-                 filter_size=3,final_activation=None,use_batchnorm=True,
+def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=3,
+                 dense_units=128, n_upsample=2, n_conv_units_initial=512, activation='relu',
+                 filter_size=5,final_activation=None,use_batchnorm=True,
                  use_layernorm=False):
 
     '''Automatically generates a Keras model for a simple convolutional decoder.'''
@@ -206,9 +206,9 @@ def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=2,
     model.add(Conv2D(channels, 1, padding='same',activation=final_activation))
     return model
 
-def conv_encoder(output_dim,image_shape,n_downsample=2,n_conv_per_downsample=2,
-                 n_dense_layers=2,dense_units=128, n_conv_units_initial=64, activation='relu',
-                 filter_size=3,use_batchnorm=False,use_layernorm=False):
+def conv_encoder(output_dim,image_shape,n_downsample=2,n_conv_per_downsample=3,
+                 n_dense_layers=2,dense_units=128, n_conv_units_initial=128, activation='relu',
+                 filter_size=5,use_batchnorm=False,use_layernorm=False):
 
     '''Counterpart encoder model for conv_decoder.'''
     model = tf.keras.models.Sequential()
