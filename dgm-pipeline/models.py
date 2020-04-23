@@ -2,6 +2,7 @@ import json
 import utils
 import builders as bld
 import quality  as q
+import numpy as np
 
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ from functools import partial
 from tqdm      import trange, tqdm
 from os        import remove
 from os.path   import exists
+
 
 builder_mapping = {'conv_decoder':bld.conv_decoder,
                    'conv_encoder':bld.conv_encoder,
@@ -20,6 +22,7 @@ builder_mapping = {'conv_decoder':bld.conv_decoder,
 
 SPECS_DIR = '../model_specs/network_specs/'
 VIZ_DIR   = '../data/visualizations/'  
+SAVED_MODELS_DIR = '../data/saved_models/'
 
 class GenerativeModel(tf.keras.Model):
     '''Common class for deep generative models'''
@@ -96,11 +99,14 @@ class GenerativeModel(tf.keras.Model):
         if not (has_generator or has_inference):
             raise ValueError('No model object found for saving.')
     
-    def plot_sample(self,n=36,nrows=6,ncols=6,plot_kwargs={},apply_sigmoid=False):
+    def plot_sample(self,n=36,nrows=6,ncols=12,plot_kwargs={},apply_sigmoid=False):
         '''
-        Plot samples drawn from prior for generative model.
+        Plot samples drawn from prior for generative model next to samples from
+        the training data.
         '''
-        x = self.sample(n=n, apply_sigmoid=apply_sigmoid)
+        x_synth = self.sample(n=n, apply_sigmoid=apply_sigmoid)
+        x_true = self.sample_training(n=n)
+        x = np.concatenate([x_synth, x_true])
         flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
         ax = plt.imshow(flat_x, **plot_kwargs)
         return ax
@@ -165,10 +171,16 @@ class GenerativeModel(tf.keras.Model):
             z = prior(shape=(n, self.latent_dim))
             x = self.decode(z, apply_sigmoid=apply_sigmoid)
         return x.numpy()
+
     def summary(self):
         self.inference_net.summary()
         self.generative_net.summary()
-        
+
+    def sample_training(self,n=36):
+        gen = self.dataset.as_numpy_iterator()
+        batch_size = self.dataset.element_spec.shape[0]
+        n_batches = int(n/batch_size)+1
+        return np.vstack([gen.next() for i in range(n_batches)])[0:n]
 
 class GAN(GenerativeModel):
     '''
@@ -285,7 +297,8 @@ class VAE(GenerativeModel):
         optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         return loss
 
-    def train(self, loss_update=100, epochs=None, plot_after_epoch=True):
+    def train(self, loss_update=100, epochs=None, plot_after_epoch=True,
+              save_interval=2):
 
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
@@ -324,29 +337,46 @@ class VAE(GenerativeModel):
         else:
             raise ValueError('Likelihood argument not understood. Try one of "bernoulli" or "normal".')
 
-        vae_loss_fn = partial(vae_loss, loglik=loglik)
+        self.loss_fn = partial(vae_loss, loglik=loglik)
 
         t = trange(epochs,desc='Loss')
         self.loss_history = []
 
         for i in t:
-            for j,minibatch in enumerate(self.dataset):
-                if hasattr(self,'beta_schedule'):
-                    beta_current = self.beta_schedule[i]
-                else:
-                    beta_current = beta
+            if hasattr(self,'beta_schedule'):
+                self.beta_current = tf.cast(self.beta_schedule[i],dtype='float32')
+            else:
+                self.beta_current = tf.cast(beta,dtype='float32')
+
+            self.train_single_epoch()
+
+            '''for j,minibatch in enumerate(self.dataset):
+                
                 loss = self.compute_apply_gradients(self, self.optimizer, 
                                                     minibatch, vae_loss_fn, beta=beta_current)
                 if j % loss_update == 0:
                     t.set_description('Loss=%g' % loss)
-                self.loss_history.append(loss)
+                self.loss_history.append(loss)'''
             if plot_after_epoch:
                 self.plot_sample()
 
+            if save_interval % i ==0:
+                self.save(SAVED_MODELS_DIR+self.spec['name'])
+
+    
+    def train_single_epoch(self):
+        for minibatch in self.dataset:               
+            loss = self.compute_apply_gradients(self, self.optimizer, 
+                                                minibatch, self.loss_fn, 
+                                                beta=self.beta_current)
+
 @tf.function
 def square_loss(x_pred, x_true, sd=1, axis=[1,2,3,]):
-    error = (x_pred-x_true)**2 / (2*sd**2)
+    error = square_loss_elem(x_pred,x_true,sd=1)
     return -tf.reduce_sum(error,axis=axis)   
+
+def square_loss_elem(x_pred,x_true,sd=1):
+    return (x_pred-x_true)**2 / (2*sd**2)
 
 @tf.function
 def cross_ent_loss(x_logit, x_label, axis=[1,2,3]):
