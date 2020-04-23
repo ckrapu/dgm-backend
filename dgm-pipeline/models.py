@@ -108,8 +108,11 @@ class GenerativeModel(tf.keras.Model):
         x_true = self.sample_training(n=n)
         x = np.concatenate([x_synth, x_true])
         flat_x = utils.flatten_image_batch(x, nrows=nrows, ncols=ncols)
+        fig = plt.figure(figsize=(8,3))
         ax = plt.imshow(flat_x, **plot_kwargs)
-        return ax
+        plt.axis('off')
+        plt.colorbar()
+        return fig, ax
 
     def test_batch(self):
         if hasattr(self,'dataset'):
