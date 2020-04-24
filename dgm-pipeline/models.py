@@ -328,7 +328,8 @@ class VAE(GenerativeModel):
 
         if loglik_type == 'bernoulli':
             loglik = cross_ent_loss
-
+        elif loglik_type =='continuous_bernoulli':
+            loglik = cb_loss
         elif loglik_type == 'normal':
             # Enables the error sd to be variable and
             # learned by the data
@@ -338,7 +339,8 @@ class VAE(GenerativeModel):
                 self.error_sd = 0.1
             loglik = partial(square_loss, sd=self.error_sd)
         else:
-            raise ValueError('Likelihood argument not understood. Try one of "bernoulli" or "normal".')
+            raise ValueError('Likelihood argument not understood. \
+                Try one of "bernoulli", "continuous_bernoulli" or "normal".')
 
         self.loss_fn = partial(vae_loss, loglik=loglik)
 
@@ -387,10 +389,30 @@ def cross_ent_loss(x_logit, x_label, axis=[1,2,3]):
     loss = -tf.reduce_sum(cross_ent, axis=axis)
     return loss
 
-#TODO: Implement the beta likelihood
 @tf.function
-def beta_loss(a, b, x_label, axis=[1,2,3]):
-    pass
+def cb_loss(x_logit, x_true, axis=[1,2,3]):
+    '''
+    Continuous Bernoulli loss per Loaiza-Ganem and Cunningham 2019.
+    '''
+    bce = wrapped_cross_ent(x_true,x_logit)
+    x_sigmoid = tf.math.sigmoid(x_logit)
+    logc = log_cb_constant(x_sigmoid)
+    loss = -tf.reduce_sum(bce, axis=axis) - logc
+    return loss
+
+@tf.function
+def log_cb_constant(x, eps=1e-5):
+    '''
+    Calculates log of the normalization constant
+    for the continuous Bernoulli likelihood.
+    '''
+    x = tf.clip_by_value(x, eps, 1-eps)
+    mask = tf.math.greater_equal(tf.math.abs(x - 0.5),(eps))
+    far   = x[mask]
+    close = x[~mask]
+    far_values =  tf.math.log( (tf.math.log(1. - far) - tf.math.log(far))/(1. - 2. * far) )
+    close_values = tf.math.log(2.) + tf.math.log(1. + tf.math.pow( 1. - 2. * close, 2)/3. )
+    return tf.reduce_sum(far_values) + tf.reduce_sum(close_values)
 
 @tf.function
 def vae_loss(model, x, loglik, beta=1.):
