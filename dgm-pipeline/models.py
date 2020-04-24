@@ -288,8 +288,16 @@ class VAE(GenerativeModel):
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logvar * .5) + mean
 
-    def set_beta_schedule(self,schedule):
-        self.beta_schedule = schedule
+    def set_beta_schedule(self,beta_max=1.,cycle_length=5):
+        n_epochs = self.spec['epochs']
+
+        if 'beta_schedule' in self.spec.keys():
+            schedule = self.spec['beta_schedule']
+            if schedule == 'linear':
+                self.beta_schedule = np.linspace(0,beta_max,n_epochs)
+            elif 'cyclic' in schedule:
+                ncycles = int(n_epochs/cycle_length)
+                self.beta_schedule = np.tile(np.linspace(0,1,cycle_length),ncycles)
 
     @staticmethod
     @tf.function
@@ -346,6 +354,7 @@ class VAE(GenerativeModel):
                 Try one of "bernoulli", "continuous_bernoulli" or "normal".')
 
         self.loss_fn = partial(vae_loss, loglik=loglik)
+        self.set_beta_schedule()
 
         t = trange(epochs,desc='Loss')
         self.loss_history = []
