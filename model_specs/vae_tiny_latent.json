@@ -1,5 +1,5 @@
 {"model_type": "vae", 
-    "latent_dim": 2, 
+    "latent_dim": 8, 
     "inference_net": "conv_encoder",
     "inference_net_kwargs":
         {"use_batchnorm":true,
@@ -12,8 +12,8 @@
     "opt_kwargs": 
         {"learning_rate":0.0001}, 
     "epochs": 10, 
-    "batch_size": 16,
-    "likelihood":"continuous_bernoulli", 
+    "batch_size": 32,
+    "likelihood":"bernoulli", 
     "name": "vae_tiny_latent",
     "vae_beta": 1,
     "error_trainable":true}

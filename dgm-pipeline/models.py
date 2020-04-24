@@ -172,7 +172,7 @@ class GenerativeModel(tf.keras.Model):
     def sample(self, z=None, n=100, prior=tf.random.normal, apply_sigmoid=False):
         if z is None:
             z = prior(shape=(n, self.latent_dim))
-            x = self.decode(z, apply_sigmoid=apply_sigmoid)
+        x = self.decode(z, apply_sigmoid=apply_sigmoid)
         return x.numpy()
 
     def summary(self):
@@ -328,8 +328,10 @@ class VAE(GenerativeModel):
 
         if loglik_type == 'bernoulli':
             loglik = cross_ent_loss
+
         elif loglik_type =='continuous_bernoulli':
             loglik = cb_loss
+
         elif loglik_type == 'normal':
             # Enables the error sd to be variable and
             # learned by the data
@@ -338,6 +340,7 @@ class VAE(GenerativeModel):
             else:
                 self.error_sd = 0.1
             loglik = partial(square_loss, sd=self.error_sd)
+            
         else:
             raise ValueError('Likelihood argument not understood. \
                 Try one of "bernoulli", "continuous_bernoulli" or "normal".')
@@ -353,15 +356,14 @@ class VAE(GenerativeModel):
             else:
                 self.beta_current = tf.cast(beta,dtype='float32')
 
-            self.train_single_epoch()
+            loss = self.train_single_epoch()
 
-            '''for j,minibatch in enumerate(self.dataset):
-                
-                loss = self.compute_apply_gradients(self, self.optimizer, 
-                                                    minibatch, vae_loss_fn, beta=beta_current)
-                if j % loss_update == 0:
-                    t.set_description('Loss=%g' % loss)
-                self.loss_history.append(loss)'''
+            if not type(loss) == str:
+                loss = loss.numpy()
+
+            t.set_description('Loss=%g' % loss)
+            self.loss_history.append(loss)
+
             if plot_after_epoch:
                 self.plot_sample()
 
@@ -374,6 +376,7 @@ class VAE(GenerativeModel):
             loss = self.compute_apply_gradients(self, self.optimizer, 
                                                 minibatch, self.loss_fn, 
                                                 beta=self.beta_current)
+        return loss
 
 @tf.function
 def square_loss(x_pred, x_true, sd=1, axis=[1,2,3,]):
