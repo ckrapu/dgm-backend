@@ -184,6 +184,15 @@ class GenerativeModel(tf.keras.Model):
         batch_size = self.dataset.element_spec.shape[0]
         n_batches = int(n/batch_size)+1
         return np.vstack([gen.next() for i in range(n_batches)])[0:n]
+    
+    def add_to_sample_history(self,n=36, apply_sigmoid=False):
+        '''
+        Add samples to record of samples from past epochs.
+        '''
+        if not hasattr(self,'sample_history'):
+            self.sample_history = []
+        self.sample_history.append(self.sample(n=n, apply_sigmoid=apply_sigmoid))
+
 
 class GAN(GenerativeModel):
     '''
@@ -266,6 +275,8 @@ class GAN(GenerativeModel):
                     self.loss_history.append([disc_loss, gp_loss, gen_loss])
             if plot_after_epoch:
                 self.plot_sample()
+            
+            self.add_to_sample_history
 
 
 class VAE(GenerativeModel):
@@ -366,6 +377,7 @@ class VAE(GenerativeModel):
                 self.beta_current = tf.cast(beta,dtype='float32')
 
             loss = self.train_single_epoch()
+            self.add_to_sample_history
 
             if not type(loss) == str:
                 loss = loss.numpy()

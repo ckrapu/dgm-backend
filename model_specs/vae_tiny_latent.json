@@ -15,5 +15,5 @@
     "batch_size": 32,
     "likelihood":"bernoulli", 
     "name": "vae_tiny_latent",
-    "vae_beta": 1,
+    "beta_schedule": "cyclic",
     "error_trainable":true}
