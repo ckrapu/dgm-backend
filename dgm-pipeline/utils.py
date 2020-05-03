@@ -111,6 +111,9 @@ def gradient_penalty(f, real, fake):
 
     return gp
 
+def check_all_batches_finite(dataset):
+    return np.all([np.all(np.isfinite(x)) for x in dataset.as_numpy_iterator()])
+
 def flatten_image_batch(x,nrows,ncols):
     '''
     Convert 3D array of images into a tiled 2D image.
@@ -171,7 +174,7 @@ def norm_div_255(array):
     array = array
     return array / 255
 
-def prep_data(array,spec,normalizer=norm_zero_one):
+def prep_data(array,spec,normalizer=lambda x: x):
     batch_size = spec['batch_size']
     n = array.shape[0]
     data = normalizer(array)
