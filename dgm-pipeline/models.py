@@ -335,11 +335,14 @@ class VAE(GenerativeModel):
         # TODO: remove this hack for using if-else cases to select
         # the optimizer
         settings = self.spec['opt_kwargs']
-        if self.spec['optimizer'] == 'adam':
-            self.optimizer = tf.keras.optimizers.Adam(**settings)
-        else:
-            raise NotImplementedError('Other optimizers are not \
-                                      yet supported.')
+
+        # Optimizer may be initialized from earlier runs
+        if not hasattr(self,'optimizer'):
+            if self.spec['optimizer'] == 'adam':
+                self.optimizer = tf.keras.optimizers.Adam(**settings)
+            else:
+                raise NotImplementedError('Other optimizers are not \
+                                        yet supported.')
 
         if epochs is None and 'epochs' in self.spec.keys():
             epochs = self.spec['epochs']
