@@ -1,1 +1,0 @@
-{"model_type": "vae", "latent_dim": 8, "inference_net": "vae_encoder_mnist_3M.json", "generative_net": "vae_decoder_mnist_3M.json", "optimizer": "adam", "opt_kwargs": {"learning_rate":0.0001}, "epochs": 1, "batch_size": 32, "name": "vae_mnist"}

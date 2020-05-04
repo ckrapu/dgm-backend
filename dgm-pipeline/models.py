@@ -33,6 +33,12 @@ class GenerativeModel(tf.keras.Model):
         self.latent_dim = spec['latent_dim']
         self.image_dims = spec['image_dims']
 
+    def get_num_batches(self):
+        '''
+        Calculates the number of minibatches in a single epoch.
+        '''
+        return tf.data.experimental.cardinality(self.dataset).numpy()
+
     def create_generator(self):
         '''
         Initialize generative network either via reading
@@ -112,6 +118,7 @@ class GenerativeModel(tf.keras.Model):
         ax = plt.imshow(flat_x, **plot_kwargs)
         plt.axis('off')
         plt.colorbar()
+
         return fig, ax
 
     def test_batch(self):
@@ -304,11 +311,14 @@ class VAE(GenerativeModel):
 
         if 'beta_schedule' in self.spec.keys():
             schedule = self.spec['beta_schedule']
+            
             if schedule == 'linear':
                 self.beta_schedule = np.linspace(0,beta_max,n_epochs)
             elif 'cyclic' in schedule:
-                ncycles = int(n_epochs/cycle_length)
-                self.beta_schedule = np.tile(np.linspace(0,1,cycle_length),ncycles)
+                ncycles = max(int(n_epochs/cycle_length),1)
+                self.beta_schedule = np.tile(np.linspace(0,1,cycle_length),ncycles)*beta_max
+            elif schedule == 'constant':
+                self.beta_schedule = np.ones(n_epochs) * beta_max
 
     @staticmethod
     @tf.function
@@ -365,39 +375,42 @@ class VAE(GenerativeModel):
                 Try one of "bernoulli", "continuous_bernoulli" or "normal".')
 
         self.loss_fn = partial(vae_loss, loglik=loglik)
-        self.set_beta_schedule()
+        self.set_beta_schedule(beta_max=beta)
 
         t = trange(epochs,desc='Loss')
-        self.loss_history = []
+        self.loss_history = np.asarray([])
+
+        self.n_batches = self.get_num_batches()
 
         for current_epoch in t:
+     
             if hasattr(self,'beta_schedule'):
                 self.beta_current = tf.cast(self.beta_schedule[current_epoch],dtype='float32')
             else:
                 self.beta_current = tf.cast(beta,dtype='float32')
 
-            loss = self.train_single_epoch()
-            self.add_to_sample_history
+            epoch_loss = self.train_single_epoch()
+            final_loss = epoch_loss[-1]
 
-            if not type(loss) == str:
-                loss = loss.numpy()
+            t.set_description('Loss=%g' % final_loss)
+            self.loss_history = np.concatenate([self.loss_history,epoch_loss])
 
-            t.set_description('Loss=%g' % loss)
-            self.loss_history.append(loss)
-
+            apply_sigmoid = 'bernoulli' in self.spec['likelihood']
             if plot_after_epoch:
-                self.plot_sample()
+                self.plot_sample(apply_sigmoid=apply_sigmoid)
 
-            if current_epoch % save_interval ==0:
+            if current_epoch % save_interval == 0:
                 self.save(SAVED_MODELS_DIR+self.spec['name'])
 
     
     def train_single_epoch(self):
-        for minibatch in self.dataset:               
+        loss_history = np.zeros(self.n_batches)
+        for i, minibatch in enumerate(self.dataset):               
             loss = self.compute_apply_gradients(self, self.optimizer, 
                                                 minibatch, self.loss_fn, 
                                                 beta=self.beta_current)
-        return loss
+            loss_history[i] = loss
+        return loss_history
 
 @tf.function
 def square_loss(x_pred, x_true, sd=1, axis=[1,2,3,]):
@@ -463,3 +476,5 @@ def vae_cross_ent_loss(model, x, beta=1.):
 @tf.function
 def wrapped_cross_ent(true,pred):
     return tf.nn.sigmoid_cross_entropy_with_logits(logits=pred,labels=true)
+
+

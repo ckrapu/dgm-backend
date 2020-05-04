@@ -4,7 +4,7 @@ import tensorflow_probability as tfp
 from warnings import warn
 from time     import time
 
-def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, ub=[]):
+def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, ub=[], num_adaptation=500):
     
     if method == 'nuts':
         inner_kernel=tfp.mcmc.NoUTurnSampler(
@@ -27,14 +27,14 @@ def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, ub=[]):
         accept_prob = 0.4
 
         def trace_fn(_, pkr):
-            pass
+            return None
 
     kernel = tfp.mcmc.TransformedTransitionKernel(inner_kernel, bijector=ub)
 
     wrapped_kernel = tfp.mcmc.DualAveragingStepSizeAdaptation(
         inner_kernel=kernel,
         target_accept_prob=accept_prob,
-        num_adaptation_steps=burnin,
+        num_adaptation_steps=num_adaptation,
         step_size_setter_fn=lambda pkr, new_step_size: pkr._replace(
             inner_results=pkr.inner_results._replace(step_size=new_step_size)),
         step_size_getter_fn=lambda pkr: pkr.inner_results.step_size,
@@ -86,7 +86,7 @@ def run_mcmc(init_state, kernel, trace_fn,
     chain_state : list of Tensorflow arrays
         Trace with samples from Markov chain
     sampler_stat : list of Tensorflow arrays
-        Diagnostics for NUTS performance
+        Diagnostics for MCMC performance
     '''
 
     # To prevent retracing that occurs when the larger function
@@ -103,10 +103,5 @@ def run_mcmc(init_state, kernel, trace_fn,
       trace_fn=trace_fn)
     total = int(time() - start)
     warn(r'{total} seconds elapsed during.',UserWarning)
-    
-    n_diverging = sampler_stat[2]
-    
-    if n_diverging > 0:
-        warn(r'{n_divergences} occurred during sampling.',UserWarning)
-    
-    return chain_state, sampler_stat
+
+    return [x.numpy() for x in chain_state] , sampler_stat

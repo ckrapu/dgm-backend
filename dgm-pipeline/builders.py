@@ -139,9 +139,9 @@ def test_decoder(input_dim,image_shape,final_activation=None):
     model.add(Reshape(image_shape))
     return model
 
-def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=3,
-                 dense_units=128, n_upsample=2, n_conv_units_initial=512, activation='relu',
-                 filter_size=5,final_activation=None,use_batchnorm=True,
+def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=2,
+                 dense_units=128, n_upsample=2, n_conv_units_initial=256, activation='relu',
+                 filter_size=5,final_activation=None,use_batchnorm=False,
                  use_layernorm=False):
 
     '''Automatically generates a Keras model for a simple convolutional decoder.'''
@@ -170,8 +170,9 @@ def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=3,
 
     # Add dense portion of the network
     for i in range(n_dense_layers-1):
-        model.add(Dense(dense_units,activation=activation,use_bias=use_bias))
+        model.add(Dense(dense_units,activation=None,use_bias=use_bias))
         model.add(normalizer())
+        model.add(Activation(activation))
 
     model.add(Dense(reshape_size,activation=activation,use_bias=use_bias))
     model.add(Reshape((height_initial, width_initial,n_conv_units_initial ),input_shape=(reshape_size,)))
@@ -179,35 +180,39 @@ def conv_decoder(input_dim,image_shape,n_dense_layers=2, n_conv_per_upsample=3,
 
     n_conv_units = n_conv_units_initial
 
+    # Add post-upsample layers for the reshaped input
+    for j in range(n_conv_per_upsample):
+            model.add(Conv2D(n_conv_units, filter_size, padding='same',activation=activation,use_bias=use_bias))
+            
+
     # Use alternating transpose and convolution layers to eliminate
     # checkerboard artifacts
     for i in range(n_upsample-1):
         n_conv_units = int(n_conv_units / 2)
         model.add(Conv2DTranspose(n_conv_units, filter_size, strides=2, padding='same',
-                                  activation=activation,use_bias=use_bias))
-        model.add(Conv2D(n_conv_units, filter_size, padding='same',activation=activation,use_bias=use_bias))
+                                  activation=None,use_bias=use_bias))
         model.add(normalizer())
+        model.add(Activation(activation))
+        model.add(Conv2D(n_conv_units, filter_size, padding='same',activation=activation,use_bias=use_bias))
+        
 
         for j in range(n_conv_per_upsample):
             model.add(Conv2D(n_conv_units, filter_size, padding='same',activation=activation,use_bias=use_bias))
-            model.add(normalizer())
 
-
+    model.add(normalizer())
     n_conv_units = int(n_conv_units / 2)
 
     model.add(Conv2DTranspose(n_conv_units, filter_size, strides=2,
                               padding='same',activation=activation,use_bias=use_bias))
 
     for j in range(n_conv_per_upsample):
-        model.add(normalizer())
         model.add(Conv2D(n_conv_units, filter_size, padding='same',activation=activation,use_bias=use_bias))
-
 
     model.add(Conv2D(channels, 1, padding='same',activation=final_activation))
     return model
 
-def conv_encoder(output_dim,image_shape,n_downsample=2,n_conv_per_downsample=3,
-                 n_dense_layers=2,dense_units=128, n_conv_units_initial=128, activation='relu',
+def conv_encoder(output_dim,image_shape,n_downsample=2,n_conv_per_downsample=2,
+                 n_dense_layers=2,dense_units=128, n_conv_units_initial=64, activation='relu',
                  filter_size=5,use_batchnorm=False,use_layernorm=False):
 
     '''Counterpart encoder model for conv_decoder.'''
@@ -231,22 +236,22 @@ def conv_encoder(output_dim,image_shape,n_downsample=2,n_conv_per_downsample=3,
 
     for i in range(n_downsample):
         model.add(Conv2D(n_conv_units,filter_size,strides=2,
-                         padding='same',activation=activation,use_bias=use_bias))
+                         padding='same',activation=None,use_bias=use_bias))
         model.add(normalizer())
+        model.add(Activation(activation))
 
         for j in range(n_conv_per_downsample):
             model.add(Conv2D(n_conv_units,filter_size,strides=1,
                              padding='same',activation=activation,use_bias=use_bias))
-            model.add(normalizer())
-
 
         n_conv_units = n_conv_units*2
 
     model.add(Flatten())
 
     for i in range(n_dense_layers):
-        model.add(Dense(dense_units,activation=activation,use_bias=use_bias))
+        model.add(Dense(dense_units,activation=None,use_bias=use_bias))
         model.add(normalizer())
+        model.add(Activation(activation))
 
     model.add(Dense(output_dim))
 
