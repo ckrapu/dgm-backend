@@ -44,7 +44,7 @@ def residual_block(inputs, resample, filters=128, kernel_size=3,
     x = Activation(activation)(x)
     return x
 
-def resnet_decoder(latent_dim, output_shape, filters=128, n_dense=2, dense_size=128,
+def resnet_decoder(latent_dim, output_shape, filters=256, n_dense=2, dense_size=128,
                    n_upsample=2, blocks_per_resample=2, use_batchnorm=False,
                    use_layernorm=False,activation='relu',
                    final_activation=None):
@@ -87,7 +87,7 @@ def resnet_decoder(latent_dim, output_shape, filters=128, n_dense=2, dense_size=
     model = tf.keras.Model(inputs=inputs, outputs=x)
     return model
 
-def resnet_encoder(output_shape, input_shape, filters=32, n_dense=2, dense_size=128,
+def resnet_encoder(output_shape, input_shape, filters=64, n_dense=2, dense_size=128,
                    n_downsample=2, blocks_per_resample=2,
                    use_batchnorm=False, use_layernorm=False,activation='relu',
                    final_activation=None):
@@ -230,7 +230,6 @@ def conv_encoder(output_dim,image_shape,n_downsample=2,n_conv_per_downsample=2,
     model.add(Conv2D(n_conv_units_initial,filter_size,strides=1,
                      padding='same',activation=activation,use_bias=use_bias))
     model.add(normalizer())
-
 
     n_conv_units = 2*n_conv_units_initial
 

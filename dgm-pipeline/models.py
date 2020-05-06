@@ -26,10 +26,11 @@ SAVED_MODELS_DIR = '../data/saved_models/'
 
 class GenerativeModel(tf.keras.Model):
     '''Common class for deep generative models'''
-    def __init__(self,spec):
+    def __init__(self,spec,dataset):
         super().__init__()
 
         self.spec = spec
+        self.dataset=dataset
         self.latent_dim = spec['latent_dim']
         self.image_dims = spec['image_dims']
 
@@ -129,29 +130,38 @@ class GenerativeModel(tf.keras.Model):
         else:
             raise ValueError('Dataset has not been set for this model yet.')
 
-    def create_masked_logp_fn(self,masked_batch,loss_elemwise_fn,loss_kwargs={},
-                              final_activation_fn=None,dtype='float32',temperature=1.):
+    def create_masked_logp(self,batch,loss_elemwise_fn,loss_kwargs={},
+                              final_activation_fn=None,dtype='float32',
+                              temperature=1.):
         '''
         Applies masking to the logged posterior for a set of images
         according.
         '''
-        is_masked = masked_batch.mask
-        is_used   = tf.cast(1 - is_masked,dtype)
-        raw_data = tf.cast(masked_batch.data, dtype)
+
+        # If the input is a Numpy masked array, use the mask
+        # to figure out what values to include in logp
+        if hasattr(batch, 'mask'):
+            is_masked = batch.mask
+            is_used   = tf.cast(1 - is_masked,dtype)
+            raw_data = tf.cast(batch.data, dtype)
+        else:
+            is_used = 1.
+            raw_data = tf.cast(batch, dtype)
 
         def logp(z):
             x = self.generative_net(z)
+            
             if final_activation_fn is not None:
                 x = final_activation_fn(x)
 
             loss_elemwise = loss_elemwise_fn(raw_data, x, **loss_kwargs)
 
             # The argument to reduce sum should have 4 dimensions
-            loglik = -tf.reduce_sum(loss_elemwise * is_used, axis=[1,2,3])
+            loglike = -tf.reduce_sum(loss_elemwise * is_used, axis=[1,2,3])
 
             # We can use hot / cold posteriors by altering
             # the temperature value
-            return temperature*loglik + self.log_prior_fn(z)
+            return temperature*loglike + self.log_prior_fn(z)
 
         return logp
 
@@ -282,14 +292,12 @@ class GAN(GenerativeModel):
                     self.loss_history.append([disc_loss, gp_loss, gen_loss])
             if plot_after_epoch:
                 self.plot_sample()
-            
-            self.add_to_sample_history
-
+            self.add_to_sample_history()
 
 class VAE(GenerativeModel):
     '''Class for training and sampling from a variational autoencoder'''
-    def __init__(self, spec):
-        super().__init__(spec)
+    def __init__(self, spec, dataset):
+        super().__init__(spec, dataset)
 
         self.create_generator()
         self.create_inference(output_shape=self.latent_dim*2)
@@ -297,6 +305,53 @@ class VAE(GenerativeModel):
         # Assumes that batch of z variable will have shape
         # [batch_size X latent_dim]
         self.log_prior_fn = lambda z: -tf.reduce_sum(z**2,axis=-1)/2
+
+
+        # TODO: remove this hack for using if-else cases to select
+        # the optimizer
+        settings = self.spec['opt_kwargs']
+
+        # Optimizer may be initialized from earlier runs
+        if self.spec['optimizer'] == 'adam':
+            self.optimizer = tf.keras.optimizers.Adam(**settings)
+        else:
+            raise NotImplementedError('Other optimizers are not \
+                                    yet supported.')
+
+        # Control representation capacity per Burgess et al. 2018
+        # 'Understanding disentangling in beta-VAE'
+        if 'vae_beta' in self.spec.keys():
+            self.beta = self.spec['vae_beta']
+        else:
+            self.beta = 1.
+        
+        loglike_type = self.spec['likelihood']
+
+        if loglike_type == 'bernoulli':
+            self.loglike = cross_ent_loss
+
+        elif loglike_type =='continuous_bernoulli':
+            self.loglike = cb_loss
+
+        elif loglike_type == 'normal':
+            # Enables the error sd to be variable and
+            # learned by the data
+            if self.spec['error_trainable']:
+                self.error_sd = tf.Variable(0.1)
+            else:
+                self.error_sd = 0.1
+            self.loglike = partial(square_loss, sd=self.error_sd)
+            
+        else:
+            raise ValueError('Likelihood argument not understood. \
+                Try one of "bernoulli", "continuous_bernoulli" or "normal".')
+
+        self.loss_fn = partial(vae_loss, loglike=self.loglike)
+        self.set_beta_schedule(beta_max=self.beta)
+
+        self.loss_history = np.asarray([])
+
+        self.n_batches = self.get_num_batches()
 
     def encode(self, x):
         mean, logvar = tf.split(self.inference_net(x), num_or_size_splits=2, axis=1)
@@ -306,9 +361,14 @@ class VAE(GenerativeModel):
         eps = tf.random.normal(shape=mean.shape)
         return eps * tf.exp(logvar * .5) + mean
 
-    def set_beta_schedule(self,beta_max=1.,cycle_length=5):
+    def set_beta_schedule(self,beta_max=1.,default_cycle_length=5):
         n_epochs = self.spec['epochs']
 
+        if 'beta_cycle_length' in self.spec.keys():
+            cycle_length = self.spec['beta_cycle_length']
+        else:
+            cycle_length = default_cycle_length
+            
         if 'beta_schedule' in self.spec.keys():
             schedule = self.spec['beta_schedule']
             
@@ -332,65 +392,19 @@ class VAE(GenerativeModel):
     def train(self, loss_update=100, epochs=None, plot_after_epoch=True,
               save_interval=2):
 
-        # TODO: remove this hack for using if-else cases to select
-        # the optimizer
-        settings = self.spec['opt_kwargs']
-
-        # Optimizer may be initialized from earlier runs
-        if not hasattr(self,'optimizer'):
-            if self.spec['optimizer'] == 'adam':
-                self.optimizer = tf.keras.optimizers.Adam(**settings)
-            else:
-                raise NotImplementedError('Other optimizers are not \
-                                        yet supported.')
-
         if epochs is None and 'epochs' in self.spec.keys():
             epochs = self.spec['epochs']
         else:
             raise ValueError('Provide a number of epochs to use via JSON specification or keyword argument.')
-
-        # Control representation capacity per Burgess et al. 2018
-        # 'Understanding disentangling in beta-VAE'
-        if 'vae_beta' in self.spec.keys():
-            beta = self.spec['vae_beta']
-        else:
-            beta = 1.
         
-        loglik_type = self.spec['likelihood']
-
-        if loglik_type == 'bernoulli':
-            loglik = cross_ent_loss
-
-        elif loglik_type =='continuous_bernoulli':
-            loglik = cb_loss
-
-        elif loglik_type == 'normal':
-            # Enables the error sd to be variable and
-            # learned by the data
-            if self.spec['error_trainable']:
-                self.error_sd = tf.Variable(0.1)
-            else:
-                self.error_sd = 0.1
-            loglik = partial(square_loss, sd=self.error_sd)
-            
-        else:
-            raise ValueError('Likelihood argument not understood. \
-                Try one of "bernoulli", "continuous_bernoulli" or "normal".')
-
-        self.loss_fn = partial(vae_loss, loglik=loglik)
-        self.set_beta_schedule(beta_max=beta)
-
         t = trange(epochs,desc='Loss')
-        self.loss_history = np.asarray([])
-
-        self.n_batches = self.get_num_batches()
 
         for current_epoch in t:
      
             if hasattr(self,'beta_schedule'):
                 self.beta_current = tf.cast(self.beta_schedule[current_epoch],dtype='float32')
             else:
-                self.beta_current = tf.cast(beta,dtype='float32')
+                self.beta_current = tf.cast(self.beta,dtype='float32')
 
             epoch_loss = self.train_single_epoch()
             final_loss = epoch_loss[-1]
@@ -404,6 +418,8 @@ class VAE(GenerativeModel):
 
             if current_epoch % save_interval == 0:
                 self.save(SAVED_MODELS_DIR+self.spec['name'])
+
+            self.add_to_sample_history(apply_sigmoid=apply_sigmoid)
 
     
     def train_single_epoch(self):
@@ -434,7 +450,7 @@ def cb_loss(x_logit, x_true, axis=[1,2,3]):
     '''
     Continuous Bernoulli loss per Loaiza-Ganem and Cunningham 2019.
     '''
-    bce = wrapped_cross_ent(x_true,x_logit)
+    bce = wrapped_cross_ent(x_true, x_logit)
     x_sigmoid = tf.math.sigmoid(x_logit)
     logc = log_cb_constant(x_sigmoid)
     loss = -tf.reduce_sum(bce, axis=axis) - logc
@@ -455,11 +471,11 @@ def log_cb_constant(x, eps=1e-5):
     return tf.reduce_sum(far_values) + tf.reduce_sum(close_values)
 
 @tf.function
-def vae_loss(model, x, loglik, beta=1.):
+def vae_loss(model, x, loglike, beta=1.):
     mean, logvar = model.encode(x)
     z = model.reparameterize(mean, logvar)
     x_pred = model.decode(z)
-    logpx_z = loglik(x_pred, x)
+    logpx_z = loglike(x_pred, x)
     logpz = utils.log_normal_pdf(z, 0., 0.)
     logqz_x = utils.log_normal_pdf(z, mean, logvar)
     kld = logqz_x - logpz
@@ -477,7 +493,7 @@ def vae_cross_ent_loss(model, x, beta=1.):
     return -tf.reduce_mean(logpx_z - beta*kld)
 
 @tf.function
-def wrapped_cross_ent(true,pred):
+def wrapped_cross_ent(true, pred):
     return tf.nn.sigmoid_cross_entropy_with_logits(logits=pred,labels=true)
 
 

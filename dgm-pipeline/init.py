@@ -13,21 +13,21 @@ model_mapping   = {'vae':VAE,
                    'gan':GAN}
 
 
-def init_model(spec):
+def init_model(spec, dataset):
 
     valid_models = model_mapping.keys()
     model_name = spec['model_type']
 
     if model_name in valid_models:
         initializer = model_mapping[model_name]
-        return initializer(spec)
+        return initializer(spec, dataset)
 
     else:
         raise NotImplementedError('Model type {0} is not supported.\
                                   Please try one of {1}'.format(model_name,
                                   valid_models))
 
-def train(data_path, model_spec_path, save=True, **kwargs):
+def init_from_spec(data_path, model_spec_path, **kwargs):
 
   # load data
   if 'npy' in data_path:
@@ -54,19 +54,18 @@ def train(data_path, model_spec_path, save=True, **kwargs):
   describe_spec(spec)
 
   dataset = prep_data(data,spec)
+  model = init_model(spec,dataset)
 
-  model = init_model(spec)
-  model.dataset = dataset
 
-  try:
-    model.train()
-  except KeyboardInterrupt:
-    return model
+  #try:
+  #  model.train()
+  #except KeyboardInterrupt:
+  #  return model
   
-  toggle_training_layers(model)
+  #toggle_training_layers(model)
 
-  if save:
-    model.save(SAVED_MODELS_DIR + spec['name'])
+  #if save:
+  #  model.save(SAVED_MODELS_DIR + spec['name'])
 
 
   return model

@@ -4,7 +4,7 @@ import tensorflow_probability as tfp
 from warnings import warn
 from time     import time
 
-def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, ub=[], num_adaptation=500):
+def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, bijectors, num_adaptation=500):
     
     if method == 'nuts':
         inner_kernel=tfp.mcmc.NoUTurnSampler(
@@ -94,6 +94,7 @@ def run_mcmc(init_state, kernel, trace_fn,
     @tf.function(autograph=True, experimental_compile=use_xla)
     def autograph_sample_chain(*args,**kwargs):
         return tfp.mcmc.sample_chain(*args, **kwargs)
+
     start = time()
     chain_state, sampler_stat = autograph_sample_chain(
       num_results=num_steps,
