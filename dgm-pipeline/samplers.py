@@ -4,7 +4,7 @@ import tensorflow_probability as tfp
 from warnings import warn
 from time     import time
 
-def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, bijectors, num_adaptation=500):
+def init_kernel(target_log_prob_fn, bijectors, method='nuts', step_size=0.05, num_adaptation=500):
     
     if method == 'nuts':
         inner_kernel=tfp.mcmc.NoUTurnSampler(
@@ -29,7 +29,7 @@ def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, bijectors, nu
         def trace_fn(_, pkr):
             return None
 
-    kernel = tfp.mcmc.TransformedTransitionKernel(inner_kernel, bijector=ub)
+    kernel = tfp.mcmc.TransformedTransitionKernel(inner_kernel, bijector=bijectors)
 
     wrapped_kernel = tfp.mcmc.DualAveragingStepSizeAdaptation(
         inner_kernel=kernel,
@@ -42,7 +42,7 @@ def init_kernel(target_log_prob_fn, method='nuts', step_size=0.05, bijectors, nu
     )
     return wrapped_kernel, trace_fn
 
-def init_remc_kernel(target_log_prob_fn, n_chains, ub=[], leapfrog_steps=4):
+def init_remc_kernel(target_log_prob_fn, n_chains, bijectors, leapfrog_steps=4):
     inverse_temps = 0.5 ** tf.range(n_chains)
     step_size = 0.5 / tf.sqrt(inverse_temperatures)
 
@@ -103,6 +103,6 @@ def run_mcmc(init_state, kernel, trace_fn,
       kernel=kernel,
       trace_fn=trace_fn)
     total = int(time() - start)
-    warn(r'{total} seconds elapsed during.',UserWarning)
+    warn(f'{total} seconds elapsed during.',UserWarning)
 
     return [x.numpy() for x in chain_state] , sampler_stat
