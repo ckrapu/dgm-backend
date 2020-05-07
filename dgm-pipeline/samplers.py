@@ -106,3 +106,24 @@ def run_mcmc(init_state, kernel, trace_fn,
     warn(f'{total} seconds elapsed during.',UserWarning)
 
     return [x.numpy() for x in chain_state] , sampler_stat
+
+def ais_loglike(target_logp, proposal_logp,n_chains,input_shape,
+                num_ais_steps=1000, hmc_step_size=0.1, 
+                hmc_leapfrog_steps=2):
+    '''
+    Runs annealed importance sampling using Hamiltonian Monte Carlo
+    to estimate the importance weights for a ratio of partition functions.
+    '''
+
+    weight_samples, ais_weights, kernel_results = (
+        tfp.mcmc.sample_annealed_importance_chain(
+          num_steps=num_ais_steps,
+          proposal_log_prob_fn=proposal_logp,
+          target_log_prob_fn=target_logp,
+          current_state=tf.zeros([n_chains] + input_shape),
+          make_kernel_fn=lambda tlp_fn: tfp.mcmc.HamiltonianMonteCarlo(
+            target_log_prob_fn=tlp_fn,
+            step_size=hmc_step_size,
+            num_leapfrog_steps=hmc_leapfrog_steps)))
+
+    return weight_samples, ais_weights, kernel_results
